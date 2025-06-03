@@ -3,7 +3,7 @@
 #include "pros/apix.h"
 #include "units/Angle.hpp"
 #include "units/units.hpp"
-#include "vexmaps/mcl/utils.h"
+#include "vexmaps/mcl/utils.hpp"
 
 namespace vexmaps {
 namespace localization_settings {

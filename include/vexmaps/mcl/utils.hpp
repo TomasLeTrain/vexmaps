@@ -2,7 +2,7 @@
 
 #include "units/Angle.hpp"
 #include "units/units.hpp"
-#include "vexmaps/mcl/pose.h"
+#include "vexmaps/mcl/pose.hpp"
 #include "vexmath/entropy.hpp"
 #include <cmath>
 #include <numbers>

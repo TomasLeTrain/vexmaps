@@ -3,7 +3,7 @@
 // defines base class for all sensors to follow
 #include "units/Angle.hpp"
 #include "units/units.hpp"
-#include "vexmaps/mcl/pose.h"
+#include "vexmaps/mcl/pose.hpp"
 #include <optional>
 
 namespace vexmaps {

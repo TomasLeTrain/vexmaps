@@ -5,9 +5,9 @@
 #include "units/Angle.hpp"
 #include "units/Pose.hpp"
 #include "units/units.hpp"
-#include "vexmaps/mcl/config.h"
-#include "vexmaps/mcl/motion_model.h"
-#include "vexmaps/mcl/sensor.h"
+#include "vexmaps/mcl/config.hpp"
+#include "vexmaps/mcl/motion_model.hpp"
+#include "vexmaps/mcl/sensor.hpp"
 #include <functional>
 
 namespace vexmaps {

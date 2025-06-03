@@ -3,10 +3,10 @@
 #include "pros/apix.h"
 #include "units/Angle.hpp"
 #include "units/units.hpp"
-#include "vexmaps/mcl/config.h"
-#include "vexmaps/mcl/pose.h"
-#include "vexmaps/mcl/sensor.h"
-#include "vexmaps/mcl/utils.h"
+#include "vexmaps/mcl/config.hpp"
+#include "vexmaps/mcl/pose.hpp"
+#include "vexmaps/mcl/sensor.hpp"
+#include "vexmaps/mcl/utils.hpp"
 #include <cmath>
 #include <optional>
 
