@@ -20,7 +20,6 @@ namespace vexmaps {
             particle_filter(std::move(sensors))
         {}
 
-
         void changeSetPoseNormalDeviation(Length new_stdev){
             set_pose_normal_deviation = new_stdev;
         }
