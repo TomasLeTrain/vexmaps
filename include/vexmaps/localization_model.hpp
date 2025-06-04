@@ -32,6 +32,15 @@ class LocalizationModel {
      */
     virtual std::optional<float> getConfidence() = 0;
 
+    /**
+     * @brief Total distance the robot has traveled 
+     *
+     * @return distance traveled by the robot
+     */
+    virtual Length getDistanceTraveled() = 0;
+
+    virtual Time getDeltaTime() = 0 ;
+
     virtual ~LocalizationModel() = default;
 };
 }; // namespace vexmaps

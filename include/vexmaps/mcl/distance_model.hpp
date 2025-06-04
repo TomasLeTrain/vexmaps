@@ -122,7 +122,7 @@ class DistanceSensorModel : public Sensor {
                  vertical_wall_length - measured_distance * this->sina };
     }
 
-    std::optional<float> p(const Point& point) override {
+    std::optional<float> evaluate(const Point& point) override {
         if (exit) {
             return std::nullopt;
         }

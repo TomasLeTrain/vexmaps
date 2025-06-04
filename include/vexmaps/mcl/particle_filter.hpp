@@ -148,7 +148,7 @@ class ParticleFilter {
             float current_weight = 1.0;
 
             for (auto&& sensor : this->sensors) {
-                const auto sensor_weight = sensor->p(particles[i]);
+                const auto sensor_weight = sensor->evaluate(particles[i]);
 
                 // allows underterminate readings through infinity
                 if (sensor_weight.has_value() &&

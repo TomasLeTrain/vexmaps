@@ -1,7 +1,7 @@
 #pragma once
 
-#include "vexmaps/localization_model.h"
-#include "vexmaps/mcl/particle_filter.h"
+#include "vexmaps/localization_model.hpp"
+#include "vexmaps/mcl/particle_filter.hpp"
 #include <memory>
 
 namespace vexmaps {
@@ -12,8 +12,8 @@ class ParticleFilterModel : public LocalizationModel {
     Time deltaTime = 10.0_msec;
 
     ParticleFilter<N> particle_filter;
-
   public:
+
     ParticleFilterModel(std::vector<std::unique_ptr<Sensor>>&& sensors)
         : particle_filter(std::move(sensors)) {}
 
@@ -27,6 +27,8 @@ class ParticleFilterModel : public LocalizationModel {
                                     1.78308_m,
                                     1.78308_m);
     }
+
+    Time getDeltaTime() override { return deltaTime; }
 
     void update() override {
         particle_filter.update();
@@ -43,6 +45,10 @@ class ParticleFilterModel : public LocalizationModel {
 
     std::optional<float> getConfidence() override {
         return std::nullopt;
+    }
+
+    Length getDistanceTraveled() override {
+        return 1;
     }
 
     ~ParticleFilterModel() override = default;
