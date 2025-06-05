@@ -4,12 +4,13 @@
 #include "vexmaps/mcl/particle_filter.hpp"
 #include <memory>
 
+// TODO: implement all the required methods
 namespace vexmaps {
 template<size_t N>
 class ParticleFilterModel : public LocalizationModel {
   private:
     Length set_pose_normal_deviation = 2_in;
-    Time deltaTime = 10.0_msec;
+    Time taskDeltaTime = 10.0_msec;
 
     ParticleFilter<N> particle_filter;
   public:
@@ -28,7 +29,7 @@ class ParticleFilterModel : public LocalizationModel {
                                     1.78308_m);
     }
 
-    Time getDeltaTime() override { return deltaTime; }
+    Time getTaskDeltaTime() override { return taskDeltaTime; }
 
     void update() override {
         particle_filter.update();
@@ -48,7 +49,11 @@ class ParticleFilterModel : public LocalizationModel {
     }
 
     Length getDistanceTraveled() override {
-        return 1;
+        return 1_in;
+    }
+
+    Time getLatestUpdateTimestamp() override {
+        return 0_sec;
     }
 
     ~ParticleFilterModel() override = default;

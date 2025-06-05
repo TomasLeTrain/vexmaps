@@ -70,7 +70,7 @@ class DistanceSensorModel : public Sensor {
         // distance sensor doesn't measure anything
         exit = measured_mm == 9999 || disabled;
 
-        this->std_deviation = (1.5_in).internal();
+        this->std_deviation = (1.2_in).internal();
 
         this->angle = angle;
         const Angle offset_angle = this->angle + this->offsets.orientation;
@@ -106,6 +106,10 @@ class DistanceSensorModel : public Sensor {
         }
     }
 
+    bool hasAvailableReading() override {
+        return exit;
+    }
+
     // returns x and y coordinates for which the distance sensor would match
     // measurements could be used to generate particles in case of total system
     // collapse
@@ -122,35 +126,22 @@ class DistanceSensorModel : public Sensor {
                  vertical_wall_length - measured_distance * this->sina };
     }
 
-    std::optional<float> evaluate(const Point& point) override {
-        if (exit) {
-            return std::nullopt;
-        }
-        // TODO: check if its being vectorized / vectorize
+    // assumes that its only getting called if exit is false
+    // this assumption saves some conditionals improving performance
+    float evaluate(const Point& point) override {
         const Length expected_distance =
           units::min((horizontal_wall_length - point.x) * this->secant,
                      (vertical_wall_length - point.y) * this->cosecant);
 
         const Length difference = expected_distance - measured_distance;
 
-        if (units::abs(difference) >
-            localization_settings::sensor_disparity_threshold) {
-            // if the distance sensors dont match at all by a long shot its
-            // probably a wrong measurement so we just ignore it
-            return std::nullopt;
-        }
+        const float normalCoeff = 1;
+        const float randomCoeff = 0.01;
+        const float randomUniform = 1 / (2 * wall_length.internal());
 
         return
-          // we can transform the standard normal distribution into any other
-          // normal distribution by a simple linear transformation
-          // std_normal_dist_pdf((x - mean)/std_deviation) / std_deviation;
-          // here the mean (expected value) is 0, since we would expect that
-          // from a perfect match
-          cheapNormalDistribution(
-            difference.internal() / std_deviation
-            // including std_deviation can mess with the way
-            // weights are prioritized ) / std_deviation;
-          );
+          randomCoeff * randomUniform +
+          normalCoeff * cheapNormalDistribution(difference.internal() / std_deviation) / std_deviation;
     }
 
     ~DistanceSensorModel() override = default;

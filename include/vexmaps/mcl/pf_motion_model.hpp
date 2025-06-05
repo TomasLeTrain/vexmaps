@@ -20,6 +20,8 @@
 
 using namespace vexmaps::localization_settings;
 
+// TODO: add settings struct to be able to configure settings
+//
 namespace vexmaps {
 /**
  * @class MotionModel
@@ -36,16 +38,17 @@ class PfMotionModel : public LocalizationModel {
     Vuniform_float32_t Vangle_distribution;
     Vuniform_float32_t Vdrift_distribution;
 
-    Time delta_time = 0_sec, last_update_time = INFINITY * sec;
+    Time last_update_timestamp = INFINITY * sec, update_timestamp = 0_sec,
+         delta_update_time = 0_sec;
 
-    Angle avg_angle = 0_stDeg, abs_delta_theta = 0_stDeg;
+    Angle abs_delta_theta = 0_stDeg;
 
     float32x4_t Vsina, Vcosa, Vnew_sina, Vnew_cosa;
     float sina, cosa, new_sina, new_cosa;
 
     float32x4_t Vglobal_pose_delta_x, Vglobal_pose_delta_y;
 
-    units::Pose last_pose, global_pose_delta;
+    units::Pose last_pose = {INFINITY*m,INFINITY*m,INFINITY*rad}, global_pose_delta;
 
     /**
      * @brief Used to get an estimate for the Robot's movements. Owned and
@@ -67,62 +70,63 @@ class PfMotionModel : public LocalizationModel {
 
     void setPose(units::Pose new_pose) override {
         base_motion_model->setPose(new_pose);
-        // avoids super large pose delta
-        last_pose = new_pose;
     }
 
     std::optional<float> getConfidence() override {
         return base_motion_model->getConfidence();
     }
 
+    std::optional<units::Pose> getGlobalPoseDelta() override {
+        return base_motion_model->getGlobalPoseDelta();
+    }
+
+    std::optional<units::Pose> getLocalPoseDelta() override {
+        return base_motion_model->getLocalPoseDelta();
+    }
+
+    std::optional<units::Pose> getLastPose() override {
+        return base_motion_model->getLastPose();
+    }
+
     Length getDistanceTraveled() override {
         return base_motion_model->getDistanceTraveled();
     }
 
-    Time getDeltaTime() override {
-        return base_motion_model->getDeltaTime();
+    Time getTaskDeltaTime() override {
+        return base_motion_model->getTaskDeltaTime();
+    }
+
+    Time getLatestUpdateTimestamp() override {
+        return update_timestamp;
     }
 
     ~PfMotionModel() override = default;
 
     // TODO: update with timestamps so that the same pose is not used twice
+    // TODO: incorporate confidence value from base motion model to increase or
+    // decrease noise
     void update() override {
-        Time current_time = from_msec(pros::millis());
-        if (!std::isfinite(last_update_time.internal())) {
-            delta_time = current_time - last_update_time;
-        } else {
-            // assume default delta time
-            delta_time = base_motion_model->getDeltaTime();
-        }
-        last_update_time = current_time;
-
         // update base motion model first
         base_motion_model->update();
 
-        auto current_pose = base_motion_model->getPose();
-        auto global_pose_delta =
-          units::Pose(current_pose - last_pose, // returns a vector
-                      current_pose.orientation - last_pose.orientation);
-        last_pose = current_pose;
+        units::Pose current_pose = base_motion_model->getPose();
 
-        // here we must use the current angle for both angles
-        // this should be fine unless we are rotating by a lot right as we start
-        // the particle filter
-        if (!std::isfinite(last_pose.orientation.internal())) {
-            avg_angle = current_pose.orientation;
-            global_pose_delta.orientation = 0.1_stDeg;
-        } else {
-            avg_angle = (current_pose.orientation + last_pose.orientation) / 2;
+        units::Pose global_pose_delta;
+        auto opt_global_delta = base_motion_model->getGlobalPoseDelta();
+
+        if(opt_global_delta.has_value()){
+            global_pose_delta = opt_global_delta.value();
+        }else{
+            global_pose_delta = {0_m,0_m,0_stRad};
         }
 
         abs_delta_theta = units::abs(global_pose_delta.orientation);
-        // does not include the orientation in the subraction
 
         // noise factors based on acceleration
         // const Length slip_noise =
         //   units::abs(slip_distance_ratio * average_distance);
         // const Length velocity_noise =
-        //   slip_velocity_factor * units::abs(average_velocity);
+        //   slip_velocity_factor * units::abs(average_vevlocity);
         // const Length acceleration_slip_noise =
         //   slip_acceleration_factor * units::abs(average_acceleration);
 
@@ -167,6 +171,16 @@ class PfMotionModel : public LocalizationModel {
             Vglobal_pose_delta_x = vld1q_dup_f32(&global_pose_delta_x);
             Vglobal_pose_delta_y = vld1q_dup_f32(&global_pose_delta_y);
         }
+
+        // update timestamps
+        update_timestamp = from_msec(pros::millis());
+        // if (!std::isfinite(last_update_timestamp.internal())) {
+        //     delta_update_time = update_timestamp - last_update_timestamp;
+        // } else {
+        //     // assume default delta time
+        //     delta_update_time = base_motion_model->getTaskDeltaTime();
+        // }
+        // last_update_timestamp = update_timestamp;
     }
 
     /**

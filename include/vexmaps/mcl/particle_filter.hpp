@@ -6,7 +6,7 @@
 #include "units/Pose.hpp"
 #include "units/units.hpp"
 #include "vexmaps/mcl/config.hpp"
-#include "vexmaps/mcl/motion_model.hpp"
+#include "vexmaps/mcl/pf_motion_model.hpp"
 #include "vexmaps/mcl/sensor.hpp"
 #include <functional>
 
@@ -20,27 +20,18 @@ class ParticleFilter {
 
     std::vector<std::unique_ptr<Sensor>> sensors;
 
-    MotionModel* motion_model;
-
-    std::function<Angle()> angleFunction;
+    PfMotionModel* motion_model;
 
     std::uniform_real_distribution<float> field_dist { -wall_length.internal(),
                                                        wall_length.internal() };
 
+    // TODO: make this configurable
     std::uniform_real_distribution<float> cloud_dist { -(2_in).internal(),
                                                        (2_in).internal() };
 
-    Length last_distance_since_update = 0_m;
+    uint64_t start_time;
 
-    Length distance_since_update = 0_m;
-    Time last_update_time = 0_sec;
-    Angle angle_change_since_update = 0_stDeg;
-
-    Length max_distance_since_update = 1.0_in;
-    Time max_update_interval = 2_sec;
-    Angle max_angle_change_since_update = 30_stDeg;
-
-    units::Pose prediction = { 0.0_m, 0.0_m, 0_stDeg };
+    units::Pose prediction;
 
     int lost_iteration_count = 0;
 
@@ -64,18 +55,29 @@ class ParticleFilter {
     bool no_active_sensors = true;
     int active_sensors = 0;
 
+    Time last_motion_model_timestamp;
+
     // -- functions called in update -- //
 
     void applyMotionModel() {
-        // one time motion model update
-        motion_model->motionUpdate(this->angle);
+        // only applies motion updates if there are new available deltas
+        auto current_timestamp = motion_model->getLatestUpdateTimestamp();
+        auto current_global_delta = motion_model->getGlobalPoseDelta();
+
+        if (current_timestamp == last_motion_model_timestamp &&
+            current_global_delta.has_value()) {
+            // same update from before or no update available
+            // either way don't move particles
+            return;
+        }
+        last_motion_model_timestamp = current_timestamp;
 
         if (usingVectorizedMotion) {
             static constexpr size_t remaining_particles = (N - (N % 4));
 
             float32x4x2_t motionData, data;
             for (size_t i = 0; i < remaining_particles; i += 4) {
-                motion_model->fastMotionUpdates(&motionData);
+                motion_model->VnoisyGlobalDelta(&motionData);
                 // points need to be located in memory like so
                 // [x][y][x][y]
                 data = vld2q_f32((float*)&particles[i]);
@@ -87,22 +89,13 @@ class ParticleFilter {
             }
             // proccess remaining
             for (size_t i = remaining_particles; i < N; i++) {
-                particles[i] += motion_model->singleParticleMotion();
+                particles[i] += motion_model->noisyGlobalDelta();
             }
         } else {
             for (size_t i = 0; i < N; i++) {
-                particles[i] += motion_model->singleParticleMotion();
+                particles[i] += motion_model->noisyGlobalDelta();
             }
         }
-
-        // TODO: look at this closer
-        // distance_since_update = distance_since_update +
-        // distance(motion_model->actualOdomChange());
-        distance_since_update =
-          motion_model->actualDistanceTraveled() - last_distance_since_update;
-
-        angle_change_since_update =
-          angle_change_since_update + motion_model->getAngleChange();
     }
 
     void updateSensors() {
@@ -116,7 +109,7 @@ class ParticleFilter {
         if (localization_settings::logging) printf("end distances\n");
     }
 
-    static bool outOfField(const Point& point) {
+    inline static bool outOfField(const Point& point) {
         return point.x > wall_length || point.x < -wall_length ||
                point.y < -wall_length || point.y > wall_length;
     }
@@ -136,56 +129,63 @@ class ParticleFilter {
                                  -(wall_length - 3.5_in),
                                  (wall_length - 3.5_in)),
                 };
-                // sets their weights so that they dont accidently shift the
-                // prediction before being updated
-                weights[i] = near_zero_epsilon / 2;
             }
         }
     }
 
-    void weightParticles(int sensors_enabled) {
+    void weightParticles() {
+        // TODO: see if this is vectorized (likely)
         for (size_t i = 0; i < N; i++) {
-            float current_weight = 1.0;
+            weights[i] = 1.0;
+        }
 
-            for (auto&& sensor : this->sensors) {
-                const auto sensor_weight = sensor->evaluate(particles[i]);
+        // TODO: see if this could be vectorized in some way - or if its already
+        // being vectorized (unlikely)
+        for (auto&& sensor : this->sensors) {
+            if (sensor->hasAvailableReading()) {
+                for (size_t i = 0; i < N; i++) {
+                    const auto sensor_weight = sensor->evaluate(particles[i]);
 
-                // allows underterminate readings through infinity
-                if (sensor_weight.has_value() &&
-                    isfinite(sensor_weight.value())) {
-                    current_weight = current_weight * sensor_weight.value();
+                    if (sensor_weight.has_value() &&
+                        isfinite(sensor_weight.value())) {
+                        weights[i] *= sensor_weight.value();
+                    }
                 }
             }
-
-            // if there is only one sensor enabled then prediction can become
-            // messed up multiplying the values allows us to incorporate the
-            // current sensor reading while not messing too much with the
-            // prediction
-            if (sensors_enabled <= 1) weights[i] = weights[i] * current_weight;
-            // if we have more than one reading we can use these weights to
-            // replace the current ones
-            else
-                weights[i] = current_weight;
         }
     }
 
     void updatePredictionBasedOnParticles() {
+
         Length weighted_x_sum = 0.0_m;
         Length weighted_y_sum = 0.0_m;
 
         // TODO: check for vectorization
         for (size_t i = 0; i < N; i++) {
-            weighted_x_sum = weighted_x_sum + particles[i].x * weights[i];
-            weighted_y_sum = weighted_y_sum + particles[i].y * weights[i];
+            weighted_x_sum += particles[i].x * weights[i];
+            weighted_y_sum += particles[i].y * weights[i];
         }
 
-        // updates prediction before resampling, as resampling sets all weights
-        // to 1/N whcih can significantly shift the prediction
-        updatePrediction(weighted_x_sum / sum_factor,
-                         weighted_y_sum / sum_factor,
-                         angle);
+        if (active_sensors >= 2) {
+            // updates prediction before resampling, as resampling sets all
+            // weights to 1/N whcih can significantly shift the prediction
+            updatePrediction(weighted_x_sum / sum_factor,
+                             weighted_y_sum / sum_factor,
+                             angle);
+        } else {
+            // updating the prediction with only one sensor might be a bad idea,
+            // as it might be heavily biased towards that specific sensor. it
+            // might be better that the prediction gets affected by the
+            // new distribution of particles after resampling
+            // TODO: see if it would be possble to determine what axis a sensor
+            // "locks" and using the weighted sum to determine that axis
+            // basically simulating a distance sensor reset
+            // this might be impossible since the wall being detected and
+            // therefore the axis can change between particles
+        }
     }
 
+    // resamples particles using stochastic universal sampling
     void resampleParticles() {
         std::uniform_real_distribution<float> weight_distribution(
           0.0,
@@ -211,8 +211,6 @@ class ParticleFilter {
             // sets weight to average value
             weights[i] = average_weight;
         }
-        // we might want to re-weight the new samples,
-        // as we are not guaranteed the next update will have any sensor updates
     }
 
     // used for recovering the system when all the particles are not close to
@@ -236,22 +234,29 @@ class ParticleFilter {
         for (size_t i = 0; i < N; i++) {
             weights[i] = average_weight;
         }
+    }
 
-        // update angle of prediction
-        updateAngle();
-        // ensure an update immediately
-        this->distance_since_update = this->max_distance_since_update;
+    void endUpdate() {
+        if (localization_settings::logging) {
+            printf("total weight: %f, time taken: %d, timestamp: %d\n",
+                   total_weight,
+                   pros::micros() - start_time,
+                   pros::millis());
+            printf("prediction:%f,%f,%f\n",
+                   this->prediction.x.convert(in),
+                   this->prediction.y.convert(in),
+                   this->prediction.orientation.convert(deg));
+        }
+        if (localization_settings::logging) printf("end generation\n");
     }
 
   public:
     Angle angle = 0_stDeg;
 
-    ParticleFilter(MotionModel* motionModel,
-                   std::vector<std::unique_ptr<Sensor>>&& sensors,
-                   std::function<Angle()> angle_function)
+    ParticleFilter(PfMotionModel* motionModel,
+                   std::vector<std::unique_ptr<Sensor>>&& sensors)
         : motion_model(motionModel),
-          sensors(std::move(sensors)),
-          angleFunction(angle_function) {
+          sensors(std::move(sensors)) {
         for (size_t i = 0; i < N; i++) {
             particles[i] = { 0.0_m, 0.0_m };
             weights[i] = average_weight;
@@ -261,10 +266,6 @@ class ParticleFilter {
     // util functions
     void addSensor(Sensor* sensor) {
         sensors.emplace_back(sensor);
-    }
-
-    void updateAngle() {
-        this->angle = angleFunction();
     }
 
     void updatePrediction(Length x, Length y, Angle angle) {
@@ -278,34 +279,9 @@ class ParticleFilter {
     }
 
     void update() {
-        updateAngle();
-
-        if (!std::isfinite(angle.internal())) {
-            return;
-        }
-
-        auto start_time = pros::micros();
+        start_time = pros::micros();
 
         applyMotionModel();
-
-        if (
-          // either the angle has changed enough
-          angle_change_since_update < max_angle_change_since_update &&
-          // or travelled enough distance to warrant an update
-          distance_since_update < max_distance_since_update &&
-          // or enough time has passed to warrant an update
-          max_update_interval > (pros::millis() * msec - last_update_time)) {
-            // we wont update the particles just yet, however we do want to
-            // update the prediction accordingly to do this we can just use the
-            // actual odom change to move the prediction without having the go
-            // through all the particles it also avoids having to consider the
-            // randomness of the particles as they are moved
-            Point actual_odom_change = motion_model->actualOdomChange();
-            updatePrediction(getPrediction().x + actual_odom_change.x,
-                             getPrediction().y + actual_odom_change.y,
-                             getPrediction().orientation);
-            return;
-        }
 
         if (localization_settings::logging) printf("start generation\n");
 
@@ -319,11 +295,27 @@ class ParticleFilter {
         active_sensors = 0;
 
         for (auto&& sensor : this->sensors) {
-            if (!sensor->exit) {
+            if (sensor->hasAvailableReading()) {
                 no_active_sensors = false;
                 active_sensors++;
             }
         }
+
+        if (no_active_sensors) {
+            // there is nothing we can do in this iteration
+            // instead we just update the prediction using the deltas from the
+            // base motion model
+            auto globalPoseDelta = motion_model->getGlobalPoseDelta();
+            if (globalPoseDelta.has_value()) {
+                updatePrediction(getPrediction().x + globalPoseDelta.value().x,
+                                 getPrediction().y + globalPoseDelta.value().y,
+                                 getPrediction().orientation +
+                                   globalPoseDelta.value().orientation);
+            }
+            endUpdate();
+            return;
+        }
+        // all routines from here on assume at least one sensor has a reading
 
         if (active_sensors >= 2 && lost_iteration_count >= 5) {
             // to recover the system we distribute particles around the
@@ -336,35 +328,38 @@ class ParticleFilter {
 
         checkOutOfFieldParticles();
 
+        weightParticles();
+
         total_weight = 0;
 
-        // only update weights if there are new readings
-        // if there arent any new readings we keep the weights the same,
-        // although we do update the prediction
-        if (!no_active_sensors) {
-            weightParticles(active_sensors);
-        }
-
         // update total_weight
+        // TODO: check for vectorization (most likely is)
         for (size_t i = 0; i < N; i++) {
-            total_weight = total_weight + weights[i];
+            total_weight += weights[i];
         }
 
         // only check for lost iterations if we have at least two distance
         // sensors
+        // TODO: come up with a better metric for the accuracy of particles
         if (active_sensors >= 2) {
             if (total_weight <=
                 localization_settings::low_weight_sum_threshold) {
                 // none of the particles are likely at all, meaning we have no
                 // clue where the robot could be
+                lost_iteration_count++;
+
                 printf(
-                  "No particles are likely: sum is: %f, threshold is: " "%f\n, " "lost " "iteration count: %d",
+                  "No particles are likely: sum is: %f, threshold is: " "%f\n, "
+                                                                        "lost "
+                                                                        "iterat"
+                                                                        "ion "
+                                                                        "count "
+                                                                        "now: "
+                                                                        "%d",
                   total_weight,
                   localization_settings::low_weight_sum_threshold,
                   lost_iteration_count);
-
-                lost_iteration_count++;
-            } else if (active_sensors >= 2) {
+            } else {
                 // we are not lost this iteration
                 // (and we have enough sensors to accurately determine this),
                 // so reset the lost iteration count
@@ -380,32 +375,31 @@ class ParticleFilter {
         // normalizes weights to add up to sum_factor
         // TODO: check for vectorization (most likely is)
         for (size_t i = 0; i < N; i++) {
-            weights[i] = weights[i] * normalization_factor;
+            weights[i] *= normalization_factor;
         }
 
         if (localization_settings::logging) {
             printf("start particles\n");
-        }
-        if (localization_settings::logging &&
-            localization_settings::particle_logging) {
-            for (size_t i = 0; i < N; i++) {
-                printf("%d:%.2f,%.2f,%.2f\n",
-                       i,
-                       particles[i].x.convert(in),
-                       particles[i].y.convert(in),
-                       weights[i]);
+            if (localization_settings::particle_logging) {
+                for (size_t i = 0; i < N; i++) {
+                    printf("%d:%.2f,%.2f,%.2f\n",
+                           i,
+                           particles[i].x.convert(in),
+                           particles[i].y.convert(in),
+                           weights[i]);
+                }
             }
-        }
-        if (localization_settings::logging) {
             printf("end particles\n");
         }
+
+        updatePredictionBasedOnParticles();
 
         int zero_particles = 0;
 
         // TODO: switch to a better metric for non-contributing particles
-        // base the near zero particle percentage only on non sensor generated
-        // particles, as we would like to resample based on their accuracy, not
-        // the generated sensor particles
+        // base the near zero particle percentage only on non sensor
+        // generated particles, as we would like to resample based on their
+        // accuracy, not the generated sensor particles
         for (size_t i = 0; i < N; i++) {
             if (weights[i] < localization_settings::near_zero_epsilon) {
                 zero_particles++;
@@ -413,39 +407,16 @@ class ParticleFilter {
         }
 
         if (static_cast<float>(zero_particles) >
-              localization_settings::near_zero_particle_percentage *
-                static_cast<float>(N)
-            // we should also have access to two readings, else we might
-            // resample when we dont know anything
-            && active_sensors > 1) {
+            localization_settings::near_zero_particle_percentage *
+              static_cast<float>(N)) {
             resampling = true;
         }
 
-        updatePredictionBasedOnParticles();
-
-        // resamples particles using stochastic universal sampling
-        //
-        // only resample if we have reached the threshold and there are
-        // meaningful weights
-        if (resampling && !no_active_sensors) {
+        if (resampling) {
             resampleParticles();
         }
 
-        if (localization_settings::logging) {
-            std::cout << "total weight: " << total_weight
-                      << ", time taken: " << pros::micros() - start_time
-                      << ", timestamp: " << pros::millis() << '\n';
-
-            std::cout << "prediction:" << this->prediction.x.convert(in) << ','
-                      << this->prediction.y.convert(in) << ','
-                      << this->prediction.orientation.convert(deg) << '\n';
-        }
-
-        this->last_update_time = pros::millis() * msec;
-        this->last_distance_since_update = distance_since_update;
-        this->angle_change_since_update = 0_stDeg;
-
-        if (localization_settings::logging) printf("end generation\n");
+        endUpdate();
     }
 
     /**
@@ -461,33 +432,30 @@ class ParticleFilter {
      * @code {.cpp}
      * Point start_point = {10.0_in,5.0_in};
      * particle_filter.init_normal_around_point(start_point, 5_in);
-     * @endcode
+     * @endcod
      */
-    void init_normal_around_point(const Point& point,
+    void init_normal_around_point(const units::Pose pose,
                                   const Length std_deviation) {
-        std::normal_distribution x_dist(point.x.internal(),
+        std::normal_distribution x_dist(pose.x.internal(),
                                         std_deviation.internal());
-        std::normal_distribution y_dist(point.y.internal(),
+        std::normal_distribution y_dist(pose.y.internal(),
                                         std_deviation.internal());
         for (size_t i = 0; i < N; i++) {
             particles[i].x = x_dist(rng) * m;
             particles[i].y = y_dist(rng) * m;
         }
         for (size_t i = 0; i < N; i++) {
-            // weights[i] = 1.0 / static_cast<float>(N);
             weights[i] = average_weight;
         }
-
-        // update angle of prediction
-        updateAngle();
-        // ensure an update immediately
-        this->distance_since_update = this->max_distance_since_update;
+        // need to update motion model as well
+        motion_model->setPose(pose);
     }
 
     void initUniform(const Length min_x,
                      const Length min_y,
                      const Length max_x,
-                     const Length max_y) {
+                     const Length max_y,
+                     const Angle orientation) {
         std::uniform_real_distribution x_dist(min_x.internal(),
                                               max_x.internal());
         std::uniform_real_distribution y_dist(min_y.internal(),
@@ -500,10 +468,11 @@ class ParticleFilter {
         for (size_t i = 0; i < N; i++) {
             weights[i] = average_weight;
         }
-        // update angle of prediction
-        updateAngle();
-        // ensure an update immediately
-        distance_since_update = max_distance_since_update;
+        const Length avg_x = (max_x + min_x) / 2.0;
+        const Length avg_y = (max_y + min_y) / 2.0;
+
+        // need to update motion model as well
+        motion_model->setPose({ avg_x, avg_y, orientation });
     }
 };
 
