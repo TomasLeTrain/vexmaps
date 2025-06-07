@@ -26,17 +26,6 @@ struct Point {
     }
 };
 
-// returns (dx,dy)
-inline Point changeToPoint(const Point& p1, const Point& p2) {
-    return { p2.x - p1.x, p2.y - p1.y };
-}
-
-inline Point rotatePoint(const Point& point, const Angle& angle) {
-    const float sina = units::sin(angle).internal();
-    const float cosa = units::cos(angle).internal();
-    return { point.x * cosa - point.y * sina, point.y * cosa + point.x * sina };
-}
-
 inline units::Pose rotatePose(const units::Pose& point, const Angle& angle) {
     const float sina = units::sin(angle).internal();
     const float cosa = units::cos(angle).internal();

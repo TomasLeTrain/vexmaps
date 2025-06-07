@@ -1,10 +1,7 @@
 #pragma once
 
-// defines base class for all sensors to follow
 #include "units/Angle.hpp"
-#include "units/units.hpp"
-#include "vexmaps/mcl/pose.hpp"
-#include <optional>
+#include "vexmaps/mcl/point.hpp"
 
 namespace vexmaps {
 class Sensor {
@@ -14,6 +11,11 @@ class Sensor {
     virtual Point getExpected() = 0;
     virtual float evaluate(const Point& point) = 0;
     virtual bool hasAvailableReading() = 0;
+
+    virtual void disable() = 0;
+    virtual void enable() = 0;
+    virtual bool getEnabled() = 0;
+
     virtual ~Sensor() = default;
 };
 } // namespace vexmaps

@@ -1,14 +1,13 @@
 #pragma once
 
-#include "pros/apix.h"
+#include "pros/distance.hpp"
 #include "units/Angle.hpp"
 #include "units/units.hpp"
 #include "vexmaps/mcl/config.hpp"
-#include "vexmaps/mcl/pose.hpp"
+#include "vexmaps/mcl/point.hpp"
 #include "vexmaps/mcl/sensor.hpp"
 #include "vexmaps/mcl/utils.hpp"
 #include <cmath>
-#include <optional>
 
 namespace vexmaps {
 class DistanceSensorModel : public Sensor {
@@ -33,19 +32,11 @@ class DistanceSensorModel : public Sensor {
 
     std::string name;
 
-  public:
     // determines whether or not readings from this sensor are considered
     bool exit = false;
     bool disabled = false;
 
-    void disable() {
-        disabled = true;
-    }
-
-    void enable() {
-        disabled = false;
-    }
-
+  public:
     DistanceSensorModel(const units::Pose offset,
                         pros::Distance* distance_sensor,
                         std::string name)
@@ -81,6 +72,8 @@ class DistanceSensorModel : public Sensor {
 
         // keeps the angle the same
         this->rotated_offsets = rotatePose(this->offsets, this->angle);
+
+        this->rotated_offsets.rotatedBy(this->angle);
 
         // we will always compare all particles to two walls
         // one vertical and one horizontal
@@ -139,9 +132,11 @@ class DistanceSensorModel : public Sensor {
         const float randomCoeff = 0.01;
         const float randomUniform = 1 / (2 * wall_length.internal());
 
-        return
-          randomCoeff * randomUniform +
-          normalCoeff * cheapNormalDistribution(difference.internal() / std_deviation) / std_deviation;
+        return randomCoeff * randomUniform +
+               normalCoeff *
+                 newCheapNormalDistribution(difference.internal() /
+                                         std_deviation) /
+                 std_deviation;
     }
 
     ~DistanceSensorModel() override = default;

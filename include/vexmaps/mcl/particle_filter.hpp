@@ -1,6 +1,5 @@
 #pragma once
 
-#include "pros/apix.h"
 #include "pros/rtos.hpp"
 #include "units/Angle.hpp"
 #include "units/Pose.hpp"
@@ -8,7 +7,7 @@
 #include "vexmaps/mcl/config.hpp"
 #include "vexmaps/mcl/pf_motion_model.hpp"
 #include "vexmaps/mcl/sensor.hpp"
-#include <functional>
+#include <arm_neon.h>
 
 namespace vexmaps {
 
@@ -349,13 +348,7 @@ class ParticleFilter {
                 lost_iteration_count++;
 
                 printf(
-                  "No particles are likely: sum is: %f, threshold is: " "%f\n, "
-                                                                        "lost "
-                                                                        "iterat"
-                                                                        "ion "
-                                                                        "count "
-                                                                        "now: "
-                                                                        "%d",
+                  "No particles are likely: sum is: %f, threshold is: " "%f\n, " "lost " "iterat" "ion " "count " "now: " "%d",
                   total_weight,
                   localization_settings::low_weight_sum_threshold,
                   lost_iteration_count);

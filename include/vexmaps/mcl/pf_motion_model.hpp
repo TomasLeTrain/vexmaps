@@ -1,18 +1,14 @@
 #pragma once
 
-#include "pros/apix.h"
-#include "pros/imu.h"
-#include "pros/motor_group.hpp"
 #include "units/Angle.hpp"
-#include "units/Vector2D.hpp"
+#include "units/Pose.hpp"
 #include "units/units.hpp"
 #include "vexmaps/localization_model.hpp"
 #include "vexmaps/mcl/config.hpp"
-#include "vexmaps/mcl/pose.hpp"
+#include "vexmaps/mcl/point.hpp"
 #include "vexmaps/mcl/utils.hpp"
 #include "vexmath/fast_prng/Xoroshiro128plus_vectorized.hpp"
 #include "vexmath/functions/trig_taylor.hpp"
-#include "vexmath/functions/vectorized_trig.hpp"
 #include "vexmath/functions/vectorized_trig_taylor.hpp"
 #include <arm_neon.h>
 #include <cmath>
@@ -48,7 +44,8 @@ class PfMotionModel : public LocalizationModel {
 
     float32x4_t Vglobal_pose_delta_x, Vglobal_pose_delta_y;
 
-    units::Pose last_pose = {INFINITY*m,INFINITY*m,INFINITY*rad}, global_pose_delta;
+    units::Pose last_pose = { INFINITY * m, INFINITY* m, INFINITY* rad },
+                global_pose_delta;
 
     /**
      * @brief Used to get an estimate for the Robot's movements. Owned and
@@ -111,18 +108,13 @@ class PfMotionModel : public LocalizationModel {
 
         units::Pose current_pose = base_motion_model->getPose();
 
-        units::Pose global_pose_delta;
-        auto opt_global_delta = base_motion_model->getGlobalPoseDelta();
-
-        if(opt_global_delta.has_value()){
-            global_pose_delta = opt_global_delta.value();
-        }else{
-            global_pose_delta = {0_m,0_m,0_stRad};
-        }
+        // becomes {0,0,0} if its nullopt
+        units::Pose global_pose_delta =
+          base_motion_model->getGlobalPoseDelta().value_or(units::Pose());
 
         abs_delta_theta = units::abs(global_pose_delta.orientation);
 
-        // noise factors based on acceleration
+        // noise factors based on velocity/acceleration
         // const Length slip_noise =
         //   units::abs(slip_distance_ratio * average_distance);
         // const Length velocity_noise =
