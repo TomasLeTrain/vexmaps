@@ -181,9 +181,9 @@ class PfMotionModel : public LocalizationModel {
      * @param result vector where the motion updates get stored
      */
     void VnoisyGlobalDelta(float32x4x2_t* result) {
-        const float32x4_t vertical_noise = Vaverage_distance_distribution();
-        const float32x4_t horizontal_noise = Vdrift_distribution();
-        const float32x4_t angle_noise = Vangle_distribution();
+        float32x4_t vertical_noise = Vaverage_distance_distribution();
+        float32x4_t horizontal_noise = Vdrift_distribution();
+        float32x4_t angle_noise = Vangle_distribution();
 
         Vsincos_taylor_delta(angle_noise, Vsina, Vcosa, &Vnew_sina, &Vnew_cosa);
 
