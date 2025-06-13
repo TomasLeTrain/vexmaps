@@ -1,13 +1,22 @@
 /**
- * @brief Modified from code by David Blackman and Sebastiano Vigna
- * (vigna@acm.org) by Sam Thompson
+ * @brief Modified from code by David Blackman, Sebastiano Vigna, and Sam
+ * Thompson (vigna@acm.org)
  */
 
 #pragma once
 
 #include "vexmath/fast_prng/SplitMix32.hpp"
+#include <cstdint>
+#include <random>
 #include <stdint.h>
 
+/**
+ * @class Xoroshiro128plus
+ * @brief Fast PRNG generator of uint32_t numbers. Satisfies
+ * UniformRandomBitGenerator so it can be used with the distributions from the
+ * C++ random library
+ *
+ */
 class Xoroshiro128plus {
   private:
     inline uint32_t rotl(const uint32_t x, int k) {
@@ -15,11 +24,9 @@ class Xoroshiro128plus {
     }
 
   protected:
-    uint32_t s[4];
+    uint32_t state[4];
 
   public:
-    Xoroshiro128plus() {}
-
     /**
      * @brief Explicit constructor which sets the rng seed.
      * @param seed the random seed
@@ -33,23 +40,23 @@ class Xoroshiro128plus {
         // Shuffle the seed generator 8 times
         seed_generator.shuffle();
         for (int i = 0; i < 4; i++) {
-            s[i] = seed_generator.next();
+            state[i] = seed_generator.next();
         }
     }
 
     uint32_t next(void) {
-        const uint32_t result = s[0] + s[3];
+        const uint32_t result = state[0] + state[3];
 
-        const uint32_t t = s[1] << 9;
+        const uint32_t t = state[1] << 9;
 
-        s[2] ^= s[0];
-        s[3] ^= s[1];
-        s[1] ^= s[2];
-        s[0] ^= s[3];
+        state[2] ^= state[0];
+        state[3] ^= state[1];
+        state[1] ^= state[2];
+        state[0] ^= state[3];
 
-        s[2] ^= t;
+        state[2] ^= t;
 
-        s[3] = rotl(s[3], 11);
+        state[3] = rotl(state[3], 11);
 
         return result;
     }
@@ -71,18 +78,18 @@ class Xoroshiro128plus {
         for (int i = 0; i < sizeof JUMP / sizeof *JUMP; i++)
             for (int b = 0; b < 32; b++) {
                 if (JUMP[i] & UINT32_C(1) << b) {
-                    s0 ^= s[0];
-                    s1 ^= s[1];
-                    s2 ^= s[2];
-                    s3 ^= s[3];
+                    s0 ^= state[0];
+                    s1 ^= state[1];
+                    s2 ^= state[2];
+                    s3 ^= state[3];
                 }
                 next();
             }
 
-        s[0] = s0;
-        s[1] = s1;
-        s[2] = s2;
-        s[3] = s3;
+        state[0] = s0;
+        state[1] = s1;
+        state[2] = s2;
+        state[3] = s3;
     }
 
     /* This is the long-jump function for the generator. It is equivalent to
@@ -103,17 +110,34 @@ class Xoroshiro128plus {
         for (int i = 0; i < sizeof LONG_JUMP / sizeof *LONG_JUMP; i++)
             for (int b = 0; b < 32; b++) {
                 if (LONG_JUMP[i] & UINT32_C(1) << b) {
-                    s0 ^= s[0];
-                    s1 ^= s[1];
-                    s2 ^= s[2];
-                    s3 ^= s[3];
+                    s0 ^= state[0];
+                    s1 ^= state[1];
+                    s2 ^= state[2];
+                    s3 ^= state[3];
                 }
                 next();
             }
 
-        s[0] = s0;
-        s[1] = s1;
-        s[2] = s2;
-        s[3] = s3;
+        state[0] = s0;
+        state[1] = s1;
+        state[2] = s2;
+        state[3] = s3;
+    }
+
+    // needed for satisfying UniformRandomBitGenerator
+    using result_type = uint32_t;
+
+    static constexpr result_type value = 1;
+
+    static constexpr result_type min() {
+        return 0;
+    }
+
+    static constexpr result_type max() {
+        return UINT32_MAX;
+    }
+
+    result_type operator()() {
+        return next();
     }
 };

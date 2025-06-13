@@ -14,6 +14,9 @@ namespace vexmaps {
 template<size_t N>
 class ParticleFilter {
   private:
+    // used for vectorization
+    static constexpr size_t remaining_particles = (N - (N % 4));
+
     Point particles[N];
     float weights[N];
 
@@ -72,17 +75,16 @@ class ParticleFilter {
         last_motion_model_timestamp = current_timestamp;
 
         if (usingVectorizedMotion) {
-            static constexpr size_t remaining_particles = (N - (N % 4));
 
-            float32x4x2_t motionData, data;
             for (size_t i = 0; i < remaining_particles; i += 4) {
-                motion_model->VnoisyGlobalDelta(&motionData);
+                float32x4_t motionDataX, motionDataY;
+                motion_model->VnoisyGlobalDelta(&motionDataX, &motionDataY);
                 // points need to be located in memory like so
-                // [x][y][x][y]
-                data = vld2q_f32((float*)&particles[i]);
+                // [x][y][x][y]...
+                float32x4x2_t data = vld2q_f32((float*)&particles[i]);
 
-                data.val[0] += motionData.val[0];
-                data.val[1] += motionData.val[1];
+                data.val[0] = vaddq_f32(data.val[0], motionDataX);
+                data.val[1] = vaddq_f32(data.val[1], motionDataY);
 
                 vst2q_f32((float*)&particles[i], data);
             }
@@ -142,12 +144,39 @@ class ParticleFilter {
         // being vectorized (unlikely)
         for (auto&& sensor : this->sensors) {
             if (sensor->hasAvailableReading()) {
-                for (size_t i = 0; i < N; i++) {
-                    const auto sensor_weight = sensor->evaluate(particles[i]);
+                // we assume the weights are valid (not infinity)
+                if (sensor->vectorized) {
+                    for (size_t i = 0; i < remaining_particles; i += 4) {
+                        float32x4x2_t points = vld2q_f32((float*)&particles[i]);
+                        float32x4_t current_weights = vld1q_f32(&weights[i]);
 
-                    if (sensor_weight.has_value() &&
-                        isfinite(sensor_weight.value())) {
-                        weights[i] *= sensor_weight.value();
+                        float32x4_t sensor_weights = sensor->Vevaluate(points);
+
+                        current_weights =
+                          vmulq_f32(current_weights, sensor_weights);
+
+                        vst1q_f32(&weights[i], current_weights);
+                    }
+
+                    // process remaining particles (if any)
+                    for (size_t i = remaining_particles; i < N; i++) {
+                        const auto sensor_weight =
+                          sensor->evaluate(particles[i]);
+
+                        if (sensor_weight.has_value() &&
+                            isfinite(sensor_weight.value())) {
+                            weights[i] *= sensor_weight.value();
+                        }
+                    }
+                } else {
+                    for (size_t i = 0; i < N; i++) {
+                        const auto sensor_weight =
+                          sensor->evaluate(particles[i]);
+
+                        if (sensor_weight.has_value() &&
+                            isfinite(sensor_weight.value())) {
+                            weights[i] *= sensor_weight.value();
+                        }
                     }
                 }
             }
@@ -156,20 +185,50 @@ class ParticleFilter {
 
     void updatePredictionBasedOnParticles() {
 
-        Length weighted_x_sum = 0.0_m;
-        Length weighted_y_sum = 0.0_m;
+        // Length weighted_x_sum = 0.0_m;
+        // Length weighted_y_sum = 0.0_m;
+        //
+        // for (size_t i = 0; i < N; i++) {
+        //     weighted_x_sum += particles[i].x * weights[i];
+        //     weighted_y_sum += particles[i].y * weights[i];
+        // }
 
-        // TODO: check for vectorization
-        for (size_t i = 0; i < N; i++) {
-            weighted_x_sum += particles[i].x * weights[i];
-            weighted_y_sum += particles[i].y * weights[i];
+        float weighted_x_sum = 0.0;
+        float weighted_y_sum = 0.0;
+
+        float32x4_t Vweighted_x_sum = vdupq_n_f32(0.0);
+        float32x4_t Vweighted_y_sum = vdupq_n_f32(0.0);
+
+        for (size_t i = 0; i < remaining_particles; i += 4) {
+            float32x4x2_t points = vld2q_f32((float*)&particles[i]);
+            float32x4_t current_weights = vld1q_f32(&weights[i]);
+
+            Vweighted_x_sum =
+              vmlaq_f32(Vweighted_x_sum, points.val[0], current_weights);
+            Vweighted_y_sum =
+              vmlaq_f32(Vweighted_y_sum, points.val[1], current_weights);
         }
+
+        for (size_t i = remaining_particles; i < N; i++) {
+            weighted_x_sum += particles[i].x.internal() * weights[i];
+            weighted_x_sum += particles[i].y.internal() * weights[i];
+        }
+
+        weighted_x_sum = vgetq_lane_f32(Vweighted_x_sum, 0) +
+                         vgetq_lane_f32(Vweighted_x_sum, 1) +
+                         vgetq_lane_f32(Vweighted_x_sum, 2) +
+                         vgetq_lane_f32(Vweighted_x_sum, 3);
+
+        weighted_y_sum = vgetq_lane_f32(Vweighted_y_sum, 0) +
+                         vgetq_lane_f32(Vweighted_y_sum, 1) +
+                         vgetq_lane_f32(Vweighted_y_sum, 2) +
+                         vgetq_lane_f32(Vweighted_y_sum, 3);
 
         if (active_sensors >= 2) {
             // updates prediction before resampling, as resampling sets all
             // weights to 1/N whcih can significantly shift the prediction
-            updatePrediction(weighted_x_sum / sum_factor,
-                             weighted_y_sum / sum_factor,
+            updatePrediction((weighted_x_sum / sum_factor) * m,
+                             (weighted_y_sum / sum_factor) * m,
                              angle);
         } else {
             // updating the prediction with only one sensor might be a bad idea,

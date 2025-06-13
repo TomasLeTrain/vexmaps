@@ -180,19 +180,22 @@ class PfMotionModel : public LocalizationModel {
      *
      * @param result vector where the motion updates get stored
      */
-    void VnoisyGlobalDelta(float32x4x2_t* result) {
+    inline void VnoisyGlobalDelta(float32x4_t* Xresult, float32x4_t* Yresult) {
         float32x4_t vertical_noise = Vaverage_distance_distribution();
         float32x4_t horizontal_noise = Vdrift_distribution();
         float32x4_t angle_noise = Vangle_distribution();
 
         Vsincos_taylor_delta(angle_noise, Vsina, Vcosa, &Vnew_sina, &Vnew_cosa);
 
-        // x
-        result->val[0] = Vglobal_pose_delta_x + vertical_noise * Vnew_cosa -
-                         horizontal_noise * Vnew_sina;
-        // y
-        result->val[1] = Vglobal_pose_delta_y + vertical_noise * Vnew_sina +
-                         horizontal_noise * Vnew_cosa;
+        // TODO: check this actually gets inlined, or that pointers dont actually get dereferenced
+        *Xresult = Vglobal_pose_delta_x;
+        *Yresult = Vglobal_pose_delta_y;
+
+        *Xresult = vmlaq_f32(*Xresult, vertical_noise, Vnew_cosa);
+        *Yresult = vmlaq_f32(*Yresult, vertical_noise, Vnew_sina);
+
+        *Xresult = vmlsq_f32(*Xresult, horizontal_noise, Vnew_sina);
+        *Yresult = vmlaq_f32(*Yresult, horizontal_noise, Vnew_cosa);
     }
 
     //

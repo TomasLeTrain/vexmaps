@@ -7,6 +7,7 @@
 #include "vexmaps/mcl/point.hpp"
 #include "vexmaps/mcl/sensor.hpp"
 #include "vexmaps/mcl/utils.hpp"
+#include <arm_neon.h>
 #include <cmath>
 
 namespace vexmaps {
@@ -14,14 +15,29 @@ class DistanceSensorModel : public Sensor {
     Length measured_distance = 0_m;
     pros::Distance* distance_sensor;
 
-    float std_deviation = 0;
+    static constexpr double std_deviation = (1.2_in).internal();
+    static constexpr double r_std_deviation = 1 / std_deviation;
+
+    static constexpr double normalCoeff = 1;
+    static constexpr double randomCoeff = 0.01;
+
+    static constexpr double randomUniformProbability =
+      1 / (2 * wall_length.internal());
+
+    // floats since direclty used
+    static constexpr float randomFactor =
+      normalCoeff * randomUniformProbability;
+    static constexpr float normalFactor = normalCoeff * r_std_deviation;
+
     Angle angle = 0_stDeg;
 
     units::Pose offsets;
 
     units::Pose rotated_offsets = { 0_m, 0_m, 0_stDeg };
 
-    // cached values
+    // precomputed values
+
+    // doubles since they are not used directly
     double cosa;
     double sina;
     double secant;
@@ -30,10 +46,21 @@ class DistanceSensorModel : public Sensor {
     Length horizontal_wall_length = wall_length;
     Length vertical_wall_length = wall_length;
 
+    // floats since they are used in evaluate
+    float Vhor_wall_coeff;
+    float Vver_wall_coeff;
+
+    float x_coeff;
+    float y_coeff;
+    Length hor_wall_coeff;
+    Length ver_wall_coeff;
+
     std::string name;
 
     // determines whether or not readings from this sensor are considered
     bool exit = false;
+    bool vectorized = true;
+
     bool disabled = false;
 
   public:
@@ -61,41 +88,57 @@ class DistanceSensorModel : public Sensor {
         // distance sensor doesn't measure anything
         exit = measured_mm == 9999 || disabled;
 
-        this->std_deviation = (1.2_in).internal();
+        // not done for logging
+        // if(exit) return;
 
         this->angle = angle;
-        const Angle offset_angle = this->angle + this->offsets.orientation;
-        this->cosa = units::cos(offset_angle).internal();
-        this->sina = units::sin(offset_angle).internal();
-        this->secant = 1 / this->cosa;
-        this->cosecant = 1 / this->sina;
-
+        const Angle offset_angle = this->angle + offsets.orientation;
         // keeps the angle the same
-        this->rotated_offsets = rotatePose(this->offsets, this->angle);
+        rotated_offsets = rotatePose(offsets, this->angle);
 
-        this->rotated_offsets.rotatedBy(this->angle);
+        // precomputed values
+        cosa = units::cos(offset_angle).internal();
+        sina = units::sin(offset_angle).internal();
+
+        // make sure they dont equal inf
+        secant = 1.0 / (std::max(fabs(cosa), 0.0001));
+        cosecant = 1.0 / (std::max(fabs(sina), 0.0001));
+
+        secant *= cosa >= 0.0 ? 1.0 : -1.0; // give right sign
+        cosecant *= sina >= 0.0 ? 1.0 : -1.0; // give right sign
 
         // we will always compare all particles to two walls
         // one vertical and one horizontal
         // since the walls we check are always the same for both we can cache
-        // which wall we are checkign
-        this->horizontal_wall_length = cosa > 0 ? wall_length : -wall_length;
-        this->vertical_wall_length = sina > 0 ? wall_length : -wall_length;
+        // the x/y value of the wall for each axis
+        horizontal_wall_length = wall_length;
+        vertical_wall_length = wall_length;
+
+        horizontal_wall_length *= cosa >= 0.0 ? 1.0 : -1.0;
+        vertical_wall_length *= sina >= 0.0 ? 1.0 : -1.0;
 
         // simplifies the math even further
-        this->horizontal_wall_length =
-          horizontal_wall_length - this->rotated_offsets.x;
-        this->vertical_wall_length =
-          vertical_wall_length - this->rotated_offsets.y;
+        horizontal_wall_length -= rotated_offsets.x;
+        vertical_wall_length -= rotated_offsets.y;
+
+        hor_wall_coeff = horizontal_wall_length * secant - measured_distance;
+        ver_wall_coeff = vertical_wall_length * cosecant - measured_distance;
+
+        hor_wall_coeff *= r_std_deviation;
+        ver_wall_coeff *= r_std_deviation;
+
+        Vhor_wall_coeff = hor_wall_coeff.internal();
+        Vver_wall_coeff = ver_wall_coeff.internal();
+
+        x_coeff = secant * r_std_deviation;
+        y_coeff = cosecant * r_std_deviation;
 
         if (localization_settings::logging) {
             // expected distance,confidence,std,exit
-            std::cout << this->name << ":"
-                      << this->measured_distance.convert(in) << ","
-                      << this->distance_sensor->get_confidence() << ","
-                      << this->std_deviation << ","
-                      << (this->exit ? "true" : "false") << ","
-                      << this->distance_sensor->get_object_size() << "\n";
+            std::cout << name << ":" << measured_distance.convert(in) << ","
+                      << distance_sensor->get_confidence() << ","
+                      << std_deviation << "," << (exit ? "true" : "false")
+                      << "," << distance_sensor->get_object_size() << "\n";
         }
     }
 
@@ -121,22 +164,78 @@ class DistanceSensorModel : public Sensor {
 
     // assumes that its only getting called if exit is false
     // this assumption saves some conditionals improving performance
-    float evaluate(const Point& point) override {
-        const Length expected_distance =
-          units::min((horizontal_wall_length - point.x) * this->secant,
-                     (vertical_wall_length - point.y) * this->cosecant);
+    inline float evaluate(const Point& point) override {
+        const Length mod_difference =
+          units::min(hor_wall_coeff - point.x * x_coeff,
+                     ver_wall_coeff - point.y * y_coeff);
 
-        const Length difference = expected_distance - measured_distance;
+        // clang-format off
+        return
+            randomFactor +
+            normalFactor * NormalDistributionApproximation(mod_difference.internal());
+        // clang-format on
+    }
 
-        const float normalCoeff = 1;
-        const float randomCoeff = 0.01;
-        const float randomUniform = 1 / (2 * wall_length.internal());
+    // TODO: see if this could be abstracted from the class, allowing multiple
+    // sensors to be evaluated at once as there are enough registers for that
+    //
+    // assumes that its only getting called if exit is false
+    // this assumption saves some conditionals improving performance
+    inline float32x4_t Vevaluate(float32x4x2_t point) override {
+        // clang-format off
+        //
+        // expected_distance =
+        //   min( (horizontal_wall_length - point.x) * secant,
+        //        (vertical_wall_length   - point.y) * cosecant );
+        //
+        // hor_wall = (horizontal_wall_length - point) * this->secant
+        // hor_wall = (horizontal_wall_length * this->secant) - point * this->secant
+        // hor_wall = HC [all precomputed]                    - point * this->secant
+        //
+        // difference = expected_distance - measured_distance
+        // difference = min(HC,VC) - measured_distance  ==>  min(HC - measured_distance, VC - measured_distance)
+        //
+        // HC                            - measured_distance
+        // (hor_wall_coeff - x * secant) - measured_distance
+        // (hor_wall_coeff - measured_distance) - x * secant
+        // hor_wall_coeff [new coeff]           - x * secant
+        //
+        // in the end this results in:
+        // hor_wall_coeff = horizontal_wall_length * secant   - measured_distance
+        // ver_wall_coeff = vertical_wall_length   * cosecant - measured_distance
+        //
+        // normal_dist = normal_dist_pdf(difference / std_dev) = normal_dist_pdf(difference * r_std_dev);
+        //
+        // Assuming std_dev is positive -->
+        // difference * r_std_dev = min(HC,VC) * r_std_dev = min(HC * r_std_dev, VC * r_std_dev)
+        //
+        // mod_difference = difference * r_std_dev
+        //
+        // (hor_wall_coeff - x * secant) * r_std_dev
+        // (hor_wall_coeff * r_std_dev) - x * (secant * r_std_dev)
+        // hor_wall_coeff - x * x_coeff
+        //
+        // clang-format on
 
-        return randomCoeff * randomUniform +
-               normalCoeff *
-                 newCheapNormalDistribution(difference.internal() /
-                                         std_deviation) /
-                 std_deviation;
+        float32x4_t HC = vdupq_n_f32(Vhor_wall_coeff);
+        float32x4_t VC = vdupq_n_f32(Vver_wall_coeff);
+
+        // HC = hor_wall_coeff - point.x * (secant * r_std_dev)
+        // VC = ver_wall_coeff - point.y * (cosecant * r_std_dev)
+        HC = vmlsq_n_f32(HC, point.val[0], x_coeff);
+        VC = vmlsq_n_f32(VC, point.val[1], y_coeff);
+
+        // difference = min(HC,VC)
+        float32x4_t mod_difference = vminq_f32(HC, VC);
+
+        float32x4_t VrandomFactor = vdupq_n_f32(randomFactor);
+        float32x4_t normal_dist =
+          VNormalDistributionApproximation<static_cast<double>(normalFactor)>(
+            mod_difference);
+
+        // res = randomFactor + normal_dist_pdf * normalFactor
+        return vaddq_f32(VrandomFactor, normal_dist);
+        // return vmlaq_n_f32(VrandomFactor, normal_dist, normalFactor);
     }
 
     ~DistanceSensorModel() override = default;

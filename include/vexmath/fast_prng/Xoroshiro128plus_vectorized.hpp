@@ -7,20 +7,19 @@
 
 #include "vexmath/fast_prng/SplitMix32.hpp"
 #include <arm_neon.h>
+#include <cstdint>
 #include <stdint.h>
 
+/**
+ * @class VXoroshiro128plus
+ * @brief Vectorized version of the xoroshiro PRNG generator
+ *
+ */
 class VXoroshiro128plus {
-  private:
-    inline static uint32x4_t rotl(const uint32x4_t x, const int k) {
-        return vshlq_n_u32(x, k) | vshrq_n_u32(x, 32 - k);
-    }
-
   protected:
     uint32x4x4_t s;
 
   public:
-    VXoroshiro128plus() {}
-
     /**
      * @brief Explicit constructor which sets the rng seed.
      * @param seed the random seed
@@ -44,9 +43,9 @@ class VXoroshiro128plus {
     }
 
     uint32x4_t next(void) {
-        const uint32x4_t result = s.val[0] + s.val[3];
+        uint32x4_t result = s.val[0] + s.val[3];
 
-        const uint32x4_t t = vshlq_n_u32(s.val[1], 9);
+        uint32x4_t t = vshlq_n_u32(s.val[1], 9);
 
         s.val[2] ^= s.val[0];
         s.val[3] ^= s.val[1];
@@ -55,8 +54,8 @@ class VXoroshiro128plus {
 
         s.val[2] ^= t;
 
-        s.val[3] = rotl(s.val[3], 11);
-
+        // rotl
+        s.val[3] = vshlq_n_u32(s.val[3], 11) | vshrq_n_u32(s.val[3], 32 - 11);
         return result;
     }
 
@@ -70,10 +69,10 @@ class VXoroshiro128plus {
                                          0x6fa035c3,
                                          0x77f2db5b };
 
-        uint32x4_t s0 = vmovq_n_u32(0);
-        uint32x4_t s1 = vmovq_n_u32(0);
-        uint32x4_t s2 = vmovq_n_u32(0);
-        uint32x4_t s3 = vmovq_n_u32(0);
+        uint32x4_t s0 = vdupq_n_u32(0);
+        uint32x4_t s1 = vdupq_n_u32(0);
+        uint32x4_t s2 = vdupq_n_u32(0);
+        uint32x4_t s3 = vdupq_n_u32(0);
         for (int i = 0; i < sizeof JUMP / sizeof *JUMP; i++)
             for (int b = 0; b < 32; b++) {
                 if (JUMP[i] & UINT32_C(1) << b) {
@@ -126,23 +125,33 @@ class VXoroshiro128plus {
 
 class Vuniform_int32_t : public VXoroshiro128plus {
   private:
-    int32x4_t va;
-    int32x4_t vb;
-    int32x4_t vd;
+    int32_t a;
+    int32_t b;
+    int32_t d;
 
   public:
-    Vuniform_int32_t() {}
+    explicit Vuniform_int32_t(uint64_t seed)
+        : VXoroshiro128plus(seed) {}
 
-    explicit Vuniform_int32_t(int32_t a, int32_t b, uint64_t seed) {
-        static const int32x4_t vone = vmovq_n_s32(1);
-        va = vdupq_n_s32(a);
-        vb = vdupq_n_s32(b);
-        vd = vb - va + vone;
-        setSeed(seed);
+    // TODO: do bound checks so that a < b
+    explicit Vuniform_int32_t(int32_t a, int32_t b, uint64_t seed)
+        : a(a),
+          b(b),
+          d(b - a + 1),
+          VXoroshiro128plus(seed) {}
+
+    void setBounds(int32_t a, int32_t b) {
+        this->a = a;
+        this->b = b;
+        this->d = b - a + 1;
     }
 
+    // TODO: technically biased, maybe a rejection sampling approach could be
+    // tried(although its not ideal since we are working with vectors)
     int32x4_t get_int() {
-        return va + (vreinterpretq_s32_u32(next()) % vd);
+        // the modulus is not implemented in arm neon, so it is likely not
+        // vectorized.
+        return vdupq_n_s32(a) + vreinterpretq_s32_u32(next() % d);
     }
 
     int32x4_t operator()() {
@@ -152,18 +161,26 @@ class Vuniform_int32_t : public VXoroshiro128plus {
 
 class Vuniform_float32_t : public VXoroshiro128plus {
   private:
-    float32x4_t va;
-    float32x4_t vb;
-    float32x4_t vd;
-
+    float a;
+    float b;
+    float d;
+    float k;
   public:
-    Vuniform_float32_t() {}
+    explicit Vuniform_float32_t(uint64_t seed)
+        : VXoroshiro128plus(seed) {}
 
-    explicit Vuniform_float32_t(float32_t a, float32_t b, uint64_t seed) {
-        va = vdupq_n_f32(a);
-        vb = vdupq_n_f32(b);
-        vd = vb - va;
-        setSeed(seed);
+    explicit Vuniform_float32_t(float a, float b, uint64_t seed)
+        : a(a),
+          b(b),
+          d(b - a),
+          k(d / static_cast<float>(UINT32_MAX)),
+          VXoroshiro128plus(seed) {}
+
+    void set_bounds(float a, float b){
+        this->a = a;
+        this->b = b;
+        this->d = b - a;
+        this->k = d / static_cast<float>(UINT32_MAX);
     }
 
     /**
@@ -171,10 +188,12 @@ class Vuniform_float32_t : public VXoroshiro128plus {
      *
      * @return vector of random floats
      */
-    float32x4_t get_reduced_float(void) {
-        static const uint32x4_t vexponent = vmovq_n_u32(127U << 23);
-        static const float32x4_t vone = vmovq_n_f32(1);
-        return vreinterpretq_f32_u32(vexponent | vshrq_n_u32(next(), 9)) - vone;
+    inline float32x4_t get_reduced_float(void) {
+        // techincally discards some of bits generated, however the discarded
+        // (lowest) bits are of lower quality anyways.
+        uint32x4_t Vexponent = vdupq_n_u32(127U << 23);
+        return vreinterpretq_f32_u32(Vexponent | vshrq_n_u32(next(), 9)) -
+               vdupq_n_f32(1);
     }
 
     /**
@@ -182,8 +201,21 @@ class Vuniform_float32_t : public VXoroshiro128plus {
      *
      * @return vector of random floats
      */
-    float32x4_t get_float(void) {
-        return va + (vd * get_reduced_float());
+    inline float32x4_t alternative_get_float(void) {
+        // slower due to more instructions being used
+        // return vdupq_n_f32(a) + vmulq_n_f32(get_reduced_float(), d);
+        return vmlaq_n_f32(vdupq_n_f32(a), get_reduced_float(), d);
+    }
+
+    inline float32x4_t get_float(void) {
+        // faster than bit hacks since the conversion is directly
+        // supported in neon
+        // could be improved by not using a linear transformation
+        // for better methods see
+        // (Drawing random floating-point numbers from an interval)
+        // [https://hal.science/hal-03282794v4/file/rand-in-range.pdf]
+        // a = a + (float)(next()) * k
+        return vmlaq_n_f32(vdupq_n_f32(a), vcvtq_f32_u32(next()), k);
     }
 
     float32x4_t operator()() {
