@@ -14,8 +14,6 @@
 #include <cmath>
 #include <random>
 
-using namespace vexmaps::localization_settings;
-
 // TODO: add settings struct to be able to configure settings
 //
 namespace vexmaps {

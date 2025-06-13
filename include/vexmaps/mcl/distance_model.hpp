@@ -15,19 +15,22 @@ class DistanceSensorModel : public Sensor {
     Length measured_distance = 0_m;
     pros::Distance* distance_sensor;
 
-    static constexpr double std_deviation = (1.2_in).internal();
-    static constexpr double r_std_deviation = 1 / std_deviation;
+    // all floats without units are in meters
+    static constexpr double exp_l = 1.68;
+    static constexpr double std_deviation = 0.03175; // 1.25 inches
 
-    static constexpr double normalCoeff = 1;
-    static constexpr double randomCoeff = 0.01;
+    // the final distribution integrates to 1
+    static constexpr double randomCoeff = 0.189;
+    static constexpr double expCoeff = 0.618;
+    static constexpr double normalCoeff = 0.194;
 
-    static constexpr double randomUniformProbability =
-      1 / (2 * wall_length.internal());
+    // 2.5 meters is more than what the distance sensor will ever be able to
+    // sense
+    static constexpr double randomUniformProbability = 1 / (2.54);
 
-    // floats since direclty used
-    static constexpr float randomFactor =
-      normalCoeff * randomUniformProbability;
-    static constexpr float normalFactor = normalCoeff * r_std_deviation;
+    static constexpr double randomFactor =
+      randomCoeff * randomUniformProbability;
+    static constexpr double normalFactor = normalCoeff / std_deviation;
 
     Angle angle = 0_stDeg;
 
@@ -54,6 +57,9 @@ class DistanceSensorModel : public Sensor {
     float y_coeff;
     Length hor_wall_coeff;
     Length ver_wall_coeff;
+
+    // combines random and exp factors into one
+    float constantFactor;
 
     std::string name;
 
@@ -124,14 +130,21 @@ class DistanceSensorModel : public Sensor {
         hor_wall_coeff = horizontal_wall_length * secant - measured_distance;
         ver_wall_coeff = vertical_wall_length * cosecant - measured_distance;
 
-        hor_wall_coeff *= r_std_deviation;
-        ver_wall_coeff *= r_std_deviation;
+        hor_wall_coeff /= std_deviation;
+        ver_wall_coeff /= std_deviation;
 
         Vhor_wall_coeff = hor_wall_coeff.internal();
         Vver_wall_coeff = ver_wall_coeff.internal();
 
-        x_coeff = secant * r_std_deviation;
-        y_coeff = cosecant * r_std_deviation;
+        x_coeff = secant / std_deviation;
+        y_coeff = cosecant / std_deviation;
+
+        // constant in relation to all particles
+        // (only depends on measured distance)
+        float expFactor =
+          expCoeff * expDistribution<exp_l>(measured_distance.internal());
+
+        constantFactor = randomFactor + expFactor;
 
         if (localization_settings::logging) {
             // expected distance,confidence,std,exit
@@ -171,8 +184,8 @@ class DistanceSensorModel : public Sensor {
 
         // clang-format off
         return
-            randomFactor +
-            normalFactor * NormalDistributionApproximation(mod_difference.internal());
+            constantFactor +
+            NormalDistributionApproximation<static_cast<double>(normalFactor)>(mod_difference.internal());
         // clang-format on
     }
 
@@ -188,10 +201,12 @@ class DistanceSensorModel : public Sensor {
         //   min( (horizontal_wall_length - point.x) * secant,
         //        (vertical_wall_length   - point.y) * cosecant );
         //
+        // -- expected distance formulation --
         // hor_wall = (horizontal_wall_length - point) * this->secant
         // hor_wall = (horizontal_wall_length * this->secant) - point * this->secant
         // hor_wall = HC [all precomputed]                    - point * this->secant
         //
+        // -- direct difference formulation --
         // difference = expected_distance - measured_distance
         // difference = min(HC,VC) - measured_distance  ==>  min(HC - measured_distance, VC - measured_distance)
         //
@@ -200,20 +215,22 @@ class DistanceSensorModel : public Sensor {
         // (hor_wall_coeff - measured_distance) - x * secant
         // hor_wall_coeff [new coeff]           - x * secant
         //
-        // in the end this results in:
-        // hor_wall_coeff = horizontal_wall_length * secant   - measured_distance
-        // ver_wall_coeff = vertical_wall_length   * cosecant - measured_distance
-        //
-        // normal_dist = normal_dist_pdf(difference / std_dev) = normal_dist_pdf(difference * r_std_dev);
+        // -- precomputed std_deviation formulation --
+        // normal_dist = normal_dist_pdf(difference / std_dev)
         //
         // Assuming std_dev is positive -->
-        // difference * r_std_dev = min(HC,VC) * r_std_dev = min(HC * r_std_dev, VC * r_std_dev)
+        // mod_difference = difference / std_dev = min(HC,VC) / std_dev
+        // -->
+        // (hor_wall_coeff - x * secant) / std_dev
+        // (hor_wall_coeff / std_dev) - x * (secant / std_dev)
+        // hor_wall_coeff [new coeff] - x * x_coeff
         //
-        // mod_difference = difference * r_std_dev
+        // in the end this results in:
+        // hor_wall_coeff = (horizontal_wall_length * secant   - measured_distance) / std_dev
+        // ver_wall_coeff = (vertical_wall_length   * cosecant - measured_distance) / std_dev
+        // x_coeff = secant   / std_dev
+        // y_coeff = cosecant / std_dev
         //
-        // (hor_wall_coeff - x * secant) * r_std_dev
-        // (hor_wall_coeff * r_std_dev) - x * (secant * r_std_dev)
-        // hor_wall_coeff - x * x_coeff
         //
         // clang-format on
 
@@ -228,13 +245,13 @@ class DistanceSensorModel : public Sensor {
         // difference = min(HC,VC)
         float32x4_t mod_difference = vminq_f32(HC, VC);
 
-        float32x4_t VrandomFactor = vdupq_n_f32(randomFactor);
+        float32x4_t VconstantFactor = vdupq_n_f32(constantFactor);
         float32x4_t normal_dist =
           VNormalDistributionApproximation<static_cast<double>(normalFactor)>(
             mod_difference);
 
         // res = randomFactor + normal_dist_pdf * normalFactor
-        return vaddq_f32(VrandomFactor, normal_dist);
+        return vaddq_f32(VconstantFactor, normal_dist);
         // return vmlaq_n_f32(VrandomFactor, normal_dist, normalFactor);
     }
 

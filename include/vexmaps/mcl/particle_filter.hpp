@@ -104,7 +104,7 @@ class ParticleFilter {
 
         // perform the one time updates on the sensors
         for (auto&& sensor : this->sensors) {
-            sensor->update(angle);
+            sensor->update(motion_model->getPose().orientation);
         }
 
         if (localization_settings::logging) printf("end distances\n");
@@ -196,40 +196,47 @@ class ParticleFilter {
         float weighted_x_sum = 0.0;
         float weighted_y_sum = 0.0;
 
-        float32x4_t Vweighted_x_sum = vdupq_n_f32(0.0);
-        float32x4_t Vweighted_y_sum = vdupq_n_f32(0.0);
 
-        for (size_t i = 0; i < remaining_particles; i += 4) {
-            float32x4x2_t points = vld2q_f32((float*)&particles[i]);
-            float32x4_t current_weights = vld1q_f32(&weights[i]);
+        if (usingVectorizedMotion) {
+            float32x4_t Vweighted_x_sum = vdupq_n_f32(0.0);
+            float32x4_t Vweighted_y_sum = vdupq_n_f32(0.0);
 
-            Vweighted_x_sum =
-              vmlaq_f32(Vweighted_x_sum, points.val[0], current_weights);
-            Vweighted_y_sum =
-              vmlaq_f32(Vweighted_y_sum, points.val[1], current_weights);
+            for (size_t i = 0; i < remaining_particles; i += 4) {
+                float32x4x2_t points = vld2q_f32((float*)&particles[i]);
+                float32x4_t current_weights = vld1q_f32(&weights[i]);
+
+                Vweighted_x_sum =
+                  vmlaq_f32(Vweighted_x_sum, points.val[0], current_weights);
+                Vweighted_y_sum =
+                  vmlaq_f32(Vweighted_y_sum, points.val[1], current_weights);
+            }
+
+            for (size_t i = remaining_particles; i < N; i++) {
+                weighted_x_sum += particles[i].x.internal() * weights[i];
+                weighted_x_sum += particles[i].y.internal() * weights[i];
+            }
+            weighted_x_sum += vgetq_lane_f32(Vweighted_x_sum, 0) +
+                              vgetq_lane_f32(Vweighted_x_sum, 1) +
+                              vgetq_lane_f32(Vweighted_x_sum, 2) +
+                              vgetq_lane_f32(Vweighted_x_sum, 3);
+
+            weighted_y_sum += vgetq_lane_f32(Vweighted_y_sum, 0) +
+                              vgetq_lane_f32(Vweighted_y_sum, 1) +
+                              vgetq_lane_f32(Vweighted_y_sum, 2) +
+                              vgetq_lane_f32(Vweighted_y_sum, 3);
+        } else {
+            for (size_t i = 0; i < N; i++) {
+                weighted_x_sum += particles[i].x.internal() * weights[i];
+                weighted_x_sum += particles[i].y.internal() * weights[i];
+            }
         }
-
-        for (size_t i = remaining_particles; i < N; i++) {
-            weighted_x_sum += particles[i].x.internal() * weights[i];
-            weighted_x_sum += particles[i].y.internal() * weights[i];
-        }
-
-        weighted_x_sum = vgetq_lane_f32(Vweighted_x_sum, 0) +
-                         vgetq_lane_f32(Vweighted_x_sum, 1) +
-                         vgetq_lane_f32(Vweighted_x_sum, 2) +
-                         vgetq_lane_f32(Vweighted_x_sum, 3);
-
-        weighted_y_sum = vgetq_lane_f32(Vweighted_y_sum, 0) +
-                         vgetq_lane_f32(Vweighted_y_sum, 1) +
-                         vgetq_lane_f32(Vweighted_y_sum, 2) +
-                         vgetq_lane_f32(Vweighted_y_sum, 3);
 
         if (active_sensors >= 2) {
             // updates prediction before resampling, as resampling sets all
             // weights to 1/N whcih can significantly shift the prediction
             updatePrediction((weighted_x_sum / sum_factor) * m,
                              (weighted_y_sum / sum_factor) * m,
-                             angle);
+                             motion_model->getPose().orientation);
         } else {
             // updating the prediction with only one sensor might be a bad idea,
             // as it might be heavily biased towards that specific sensor. it
@@ -309,8 +316,7 @@ class ParticleFilter {
     }
 
   public:
-    Angle angle = 0_stDeg;
-
+    // managed by the base motion model
     ParticleFilter(PfMotionModel* motionModel,
                    std::vector<std::unique_ptr<Sensor>>&& sensors)
         : motion_model(motionModel),
