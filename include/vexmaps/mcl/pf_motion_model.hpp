@@ -7,6 +7,7 @@
 #include "vexmaps/mcl/config.hpp"
 #include "vexmaps/mcl/point.hpp"
 #include "vexmaps/mcl/utils.hpp"
+#include "vexmaps/mcl/config.hpp"
 #include "vexmath/fast_prng/Xoroshiro128plus_vectorized.hpp"
 #include "vexmath/functions/trig_taylor.hpp"
 #include "vexmath/functions/vectorized_trig_taylor.hpp"
@@ -22,6 +23,8 @@ namespace vexmaps {
  * @brief Wrapper for a localization model with support for adding noise.
  *
  */
+template<class PFConfig>
+    requires ValidPFConfig<PFConfig>
 class PfMotionModel : public LocalizationModel {
   private:
     std::uniform_real_distribution<float> average_distance_distribution;

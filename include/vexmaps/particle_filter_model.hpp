@@ -2,17 +2,20 @@
 
 #include "vexmaps/localization_model.hpp"
 #include "vexmaps/mcl/particle_filter.hpp"
+#include "vexmaps/mcl/config.hpp"
+#include "vexmaps/mcl/utils.hpp"
 #include <memory>
 
 // TODO: implement all the required methods
 namespace vexmaps {
-template<size_t N>
+template<size_t N,class PFConfig>
+    requires ValidPFConfig<PFConfig>
 class ParticleFilterModel : public LocalizationModel {
   private:
     Length set_pose_normal_deviation = 2_in;
     Time taskDeltaTime = 10.0_msec;
 
-    ParticleFilter<N> particle_filter;
+    ParticleFilter<N,PFConfig> particle_filter;
   public:
 
     ParticleFilterModel(std::vector<std::unique_ptr<Sensor>>&& sensors)
@@ -23,10 +26,10 @@ class ParticleFilterModel : public LocalizationModel {
     }
 
     void init() override {
-        particle_filter.initUniform(-1.78308_m,
-                                    -1.78308_m,
-                                    1.78308_m,
-                                    1.78308_m);
+        particle_filter.initUniform(-wall_length,
+                                    -wall_length,
+                                    wall_length,
+                                    wall_length);
     }
 
     Time getTaskDeltaTime() override { return taskDeltaTime; }
@@ -49,7 +52,7 @@ class ParticleFilterModel : public LocalizationModel {
     }
 
     Length getDistanceTraveled() override {
-        return 1_in;
+        return particle_filter.getDistanceTraveled();
     }
 
     Time getLatestUpdateTimestamp() override {

@@ -7,9 +7,6 @@
 namespace vexmaps {
 class Sensor {
   public:
-    bool exit;
-    bool vectorized;
-
     virtual void update(Angle angle) = 0;
     virtual Point getExpected() = 0;
     virtual bool hasAvailableReading() = 0;
@@ -21,6 +18,7 @@ class Sensor {
     virtual void enable() = 0;
     virtual bool getEnabled() = 0;
 
+    virtual bool getVectorized() = 0;
 
     virtual ~Sensor() = default;
 };

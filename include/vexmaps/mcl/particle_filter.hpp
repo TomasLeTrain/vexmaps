@@ -11,7 +11,9 @@
 
 namespace vexmaps {
 
-template<size_t N>
+template<size_t N, class PFConfig, class MotionModelConfig>
+    requires ValidPFConfig<PFConfig> &&
+             ValidMotionModelConfig<MotionModelConfig>
 class ParticleFilter {
   private:
     // used for vectorization
@@ -20,9 +22,9 @@ class ParticleFilter {
     Point particles[N];
     float weights[N];
 
-    std::vector<std::unique_ptr<Sensor>> sensors;
+    std::vector<Sensor*> sensors;
 
-    PfMotionModel* motion_model;
+    std::unique_ptr<PfMotionModel<MotionModelConfig>> motion_model;
 
     std::uniform_real_distribution<float> field_dist { -wall_length.internal(),
                                                        wall_length.internal() };
@@ -74,7 +76,7 @@ class ParticleFilter {
         }
         last_motion_model_timestamp = current_timestamp;
 
-        if (usingVectorizedMotion) {
+        if (PFConfig::usingVectorizedMotion) {
 
             for (size_t i = 0; i < remaining_particles; i += 4) {
                 float32x4_t motionDataX, motionDataY;
@@ -100,14 +102,10 @@ class ParticleFilter {
     }
 
     void updateSensors() {
-        if (localization_settings::logging) printf("start distances\n");
-
         // perform the one time updates on the sensors
         for (auto&& sensor : this->sensors) {
             sensor->update(motion_model->getPose().orientation);
         }
-
-        if (localization_settings::logging) printf("end distances\n");
     }
 
     inline static bool outOfField(const Point& point) {
@@ -140,12 +138,10 @@ class ParticleFilter {
             weights[i] = 1.0;
         }
 
-        // TODO: see if this could be vectorized in some way - or if its already
-        // being vectorized (unlikely)
         for (auto&& sensor : this->sensors) {
             if (sensor->hasAvailableReading()) {
                 // we assume the weights are valid (not infinity)
-                if (sensor->vectorized) {
+                if (sensor->getVectorized()) {
                     for (size_t i = 0; i < remaining_particles; i += 4) {
                         float32x4x2_t points = vld2q_f32((float*)&particles[i]);
                         float32x4_t current_weights = vld1q_f32(&weights[i]);
@@ -160,22 +156,20 @@ class ParticleFilter {
 
                     // process remaining particles (if any)
                     for (size_t i = remaining_particles; i < N; i++) {
-                        const auto sensor_weight =
+                        const float sensor_weight =
                           sensor->evaluate(particles[i]);
 
-                        if (sensor_weight.has_value() &&
-                            isfinite(sensor_weight.value())) {
-                            weights[i] *= sensor_weight.value();
+                        if (std::isfinite(sensor_weight)) {
+                            weights[i] *= sensor_weight;
                         }
                     }
                 } else {
                     for (size_t i = 0; i < N; i++) {
-                        const auto sensor_weight =
+                        const float sensor_weight =
                           sensor->evaluate(particles[i]);
 
-                        if (sensor_weight.has_value() &&
-                            isfinite(sensor_weight.value())) {
-                            weights[i] *= sensor_weight.value();
+                        if (std::isfinite(sensor_weight)) {
+                            weights[i] *= sensor_weight;
                         }
                     }
                 }
@@ -196,8 +190,7 @@ class ParticleFilter {
         float weighted_x_sum = 0.0;
         float weighted_y_sum = 0.0;
 
-
-        if (usingVectorizedMotion) {
+        if (PFConfig::usingVectorizedMotion) {
             float32x4_t Vweighted_x_sum = vdupq_n_f32(0.0);
             float32x4_t Vweighted_y_sum = vdupq_n_f32(0.0);
 
@@ -245,8 +238,8 @@ class ParticleFilter {
             // TODO: see if it would be possble to determine what axis a sensor
             // "locks" and using the weighted sum to determine that axis
             // basically simulating a distance sensor reset
-            // this might be impossible since the wall being detected and
-            // therefore the axis can change between particles
+            // this might be impossible since the wall being detected (and
+            // therefore the axis) can change between particles
         }
     }
 
@@ -302,7 +295,7 @@ class ParticleFilter {
     }
 
     void endUpdate() {
-        if (localization_settings::logging) {
+        if (PFConfig::logging) {
             printf("total weight: %f, time taken: %d, timestamp: %d\n",
                    total_weight,
                    pros::micros() - start_time,
@@ -311,15 +304,21 @@ class ParticleFilter {
                    this->prediction.x.convert(in),
                    this->prediction.y.convert(in),
                    this->prediction.orientation.convert(deg));
+            printf("end generation\n");
         }
-        if (localization_settings::logging) printf("end generation\n");
+    }
+
+    void updatePrediction(Length x, Length y, Angle angle) {
+        prediction.x = x;
+        prediction.y = y;
+        prediction.orientation = angle;
     }
 
   public:
     // managed by the base motion model
-    ParticleFilter(PfMotionModel* motionModel,
-                   std::vector<std::unique_ptr<Sensor>>&& sensors)
-        : motion_model(motionModel),
+    ParticleFilter(std::unique_ptr<PfMotionModel> motionModel,
+                   std::vector<Sensor*>&& sensors)
+        : motion_model(std::move(motionModel)),
           sensors(std::move(sensors)) {
         for (size_t i = 0; i < N; i++) {
             particles[i] = { 0.0_m, 0.0_m };
@@ -327,15 +326,8 @@ class ParticleFilter {
         }
     }
 
-    // util functions
     void addSensor(Sensor* sensor) {
         sensors.emplace_back(sensor);
-    }
-
-    void updatePrediction(Length x, Length y, Angle angle) {
-        prediction.x = x;
-        prediction.y = y;
-        prediction.orientation = angle;
     }
 
     units::Pose getPrediction() {
@@ -347,7 +339,7 @@ class ParticleFilter {
 
         applyMotionModel();
 
-        if (localization_settings::logging) printf("start generation\n");
+        if (PFConfig::logging) printf("start generation\n");
 
         updateSensors();
 
@@ -406,8 +398,7 @@ class ParticleFilter {
         // sensors
         // TODO: come up with a better metric for the accuracy of particles
         if (active_sensors >= 2) {
-            if (total_weight <=
-                localization_settings::low_weight_sum_threshold) {
+            if (total_weight <= PFConfig::low_weight_sum_threshold) {
                 // none of the particles are likely at all, meaning we have no
                 // clue where the robot could be
                 lost_iteration_count++;
@@ -415,7 +406,7 @@ class ParticleFilter {
                 printf(
                   "No particles are likely: sum is: %f, threshold is: " "%f\n, " "lost " "iterat" "ion " "count " "now: " "%d",
                   total_weight,
-                  localization_settings::low_weight_sum_threshold,
+                  PFConfig::low_weight_sum_threshold,
                   lost_iteration_count);
             } else {
                 // we are not lost this iteration
@@ -436,12 +427,11 @@ class ParticleFilter {
             weights[i] *= normalization_factor;
         }
 
-        if (localization_settings::logging) {
+        if (PFConfig::logging) {
             printf("start particles\n");
-            if (localization_settings::particle_logging) {
+            if (PFConfig::particle_logging) {
                 for (size_t i = 0; i < N; i++) {
-                    printf("%d:%.2f,%.2f,%.2f\n",
-                           i,
+                    printf("%.1f %.1f %.1f\n",
                            particles[i].x.convert(in),
                            particles[i].y.convert(in),
                            weights[i]);
@@ -459,14 +449,13 @@ class ParticleFilter {
         // generated particles, as we would like to resample based on their
         // accuracy, not the generated sensor particles
         for (size_t i = 0; i < N; i++) {
-            if (weights[i] < localization_settings::near_zero_epsilon) {
+            if (weights[i] < PFConfig::near_zero_epsilon) {
                 zero_particles++;
             }
         }
 
         if (static_cast<float>(zero_particles) >
-            localization_settings::near_zero_particle_percentage *
-              static_cast<float>(N)) {
+            PFConfig::near_zero_particle_percentage * static_cast<float>(N)) {
             resampling = true;
         }
 
@@ -532,20 +521,8 @@ class ParticleFilter {
         // need to update motion model as well
         motion_model->setPose({ avg_x, avg_y, orientation });
     }
+
+    // exposes motion_model attributes
 };
 
-// template<size_t number_of_particles>
-// static void init_localization_task(ParticleFilter<number_of_particles>&
-// particle_filter){
-//     uint32_t start_time = 0;
-//     pros::Task localization_task = pros::Task([&] {
-//         while(true){
-//             start_time = pros::millis();
-//
-//             particle_filter.update();
-//
-//             pros::c::task_delay_until(&start_time, 10);
-//         }
-//     });
-// }
 } // namespace vexmaps

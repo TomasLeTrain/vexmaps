@@ -11,32 +11,27 @@
 #include <cmath>
 
 namespace vexmaps {
+
+template<class DistanceSensorConfig>
+    requires ValidDistanceConfig<DistanceSensorConfig>
 class DistanceSensorModel : public Sensor {
     Length measured_distance = 0_m;
     pros::Distance* distance_sensor;
-
-    // all floats without units are in meters
-    static constexpr double exp_l = 1.68;
-    static constexpr double std_deviation = 0.03175; // 1.25 inches
-
-    // the final distribution integrates to 1
-    static constexpr double randomCoeff = 0.189;
-    static constexpr double expCoeff = 0.618;
-    static constexpr double normalCoeff = 0.194;
-
-    // 2.5 meters is more than what the distance sensor will ever be able to
-    // sense
-    static constexpr double randomUniformProbability = 1 / (2.54);
-
-    static constexpr double randomFactor =
-      randomCoeff * randomUniformProbability;
-    static constexpr double normalFactor = normalCoeff / std_deviation;
 
     Angle angle = 0_stDeg;
 
     units::Pose offsets;
 
     units::Pose rotated_offsets = { 0_m, 0_m, 0_stDeg };
+
+    // 2.5 meters is more than what the distance sensor will ever be able to
+    // sense
+    static constexpr double randomUniformProbability = 1 / (2.54);
+
+    static constexpr double randomFactor =
+      DistanceSensorConfig::randomCoeff * randomUniformProbability;
+    static constexpr double normalFactor =
+      DistanceSensorConfig::normalCoeff / DistanceSensorConfig::std_deviation;
 
     // precomputed values
 
@@ -130,28 +125,30 @@ class DistanceSensorModel : public Sensor {
         hor_wall_coeff = horizontal_wall_length * secant - measured_distance;
         ver_wall_coeff = vertical_wall_length * cosecant - measured_distance;
 
-        hor_wall_coeff /= std_deviation;
-        ver_wall_coeff /= std_deviation;
+        hor_wall_coeff /= DistanceSensorConfig::std_deviation;
+        ver_wall_coeff /= DistanceSensorConfig::std_deviation;
 
         Vhor_wall_coeff = hor_wall_coeff.internal();
         Vver_wall_coeff = ver_wall_coeff.internal();
 
-        x_coeff = secant / std_deviation;
-        y_coeff = cosecant / std_deviation;
+        x_coeff = secant / DistanceSensorConfig::std_deviation;
+        y_coeff = cosecant / DistanceSensorConfig::std_deviation;
 
         // constant in relation to all particles
         // (only depends on measured distance)
-        float expFactor =
-          expCoeff * expDistribution<exp_l>(measured_distance.internal());
+        float expFactor = DistanceSensorConfig::expCoeff *
+                          expDistribution<DistanceSensorConfig::exp_l>(
+                            measured_distance.internal());
 
         constantFactor = randomFactor + expFactor;
 
-        if (localization_settings::logging) {
-            // expected distance,confidence,std,exit
-            std::cout << name << ":" << measured_distance.convert(in) << ","
-                      << distance_sensor->get_confidence() << ","
-                      << std_deviation << "," << (exit ? "true" : "false")
-                      << "," << distance_sensor->get_object_size() << "\n";
+        if (DistanceSensorConfig::logging) {
+            // d_name:distance,confidence,std,exit,obj_size
+            std::cout << "d_" << name << ":" << measured_distance.convert(in)
+                      << "," << distance_sensor->get_confidence() << ","
+                      << DistanceSensorConfig::std_deviation << ","
+                      << (exit ? "true" : "false") << ","
+                      << distance_sensor->get_object_size() << "\n";
         }
     }
 
@@ -159,20 +156,8 @@ class DistanceSensorModel : public Sensor {
         return exit;
     }
 
-    // returns x and y coordinates for which the distance sensor would match
-    // measurements could be used to generate particles in case of total system
-    // collapse
-    Point getExpected() override {
-        if (exit) {
-            return { infinity() * m, infinity() * m };
-        }
-        // if we want to generate particles from the measurements themslves we
-        // can easily rearrange to get the x and y values for which this
-        // measurement would be plausible horizontal_wall_length -
-        // measured_distance * this->cosa  = point.x vertical_wall_length -
-        // measured_distance * this->sina  = point.y
-        return { horizontal_wall_length - measured_distance * this->cosa,
-                 vertical_wall_length - measured_distance * this->sina };
+    bool getVectorized() override {
+        return vectorized;
     }
 
     // assumes that its only getting called if exit is false

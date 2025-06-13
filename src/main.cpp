@@ -1,5 +1,5 @@
 #include "main.h"
-#include "vexmaps/particle_filter_model.h"
+#include "vexmaps/particle_filter_model.hpp"
 
 /**
  * Runs initialization code. This occurs as soon as the program is started.
