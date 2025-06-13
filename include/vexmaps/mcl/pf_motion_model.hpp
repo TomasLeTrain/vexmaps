@@ -7,7 +7,6 @@
 #include "vexmaps/mcl/config.hpp"
 #include "vexmaps/mcl/point.hpp"
 #include "vexmaps/mcl/utils.hpp"
-#include "vexmaps/mcl/config.hpp"
 #include "vexmath/fast_prng/Xoroshiro128plus_vectorized.hpp"
 #include "vexmath/functions/trig_taylor.hpp"
 #include "vexmath/functions/vectorized_trig_taylor.hpp"
@@ -109,9 +108,7 @@ class PfMotionModel : public LocalizationModel {
 
         units::Pose current_pose = base_motion_model->getPose();
 
-        // becomes {0,0,0} if its nullopt
-        units::Pose global_pose_delta =
-          base_motion_model->getGlobalPoseDelta().value_or(units::Pose());
+        units::Pose global_pose_delta = base_motion_model->getGlobalPoseDelta();
 
         abs_delta_theta = units::abs(global_pose_delta.orientation);
 
@@ -167,13 +164,6 @@ class PfMotionModel : public LocalizationModel {
 
         // update timestamps
         update_timestamp = from_msec(pros::millis());
-        // if (!std::isfinite(last_update_timestamp.internal())) {
-        //     delta_update_time = update_timestamp - last_update_timestamp;
-        // } else {
-        //     // assume default delta time
-        //     delta_update_time = base_motion_model->getTaskDeltaTime();
-        // }
-        // last_update_timestamp = update_timestamp;
     }
 
     /**
@@ -188,7 +178,8 @@ class PfMotionModel : public LocalizationModel {
 
         Vsincos_taylor_delta(angle_noise, Vsina, Vcosa, &Vnew_sina, &Vnew_cosa);
 
-        // TODO: check this actually gets inlined, or that pointers dont actually get dereferenced
+        // TODO: check this actually gets inlined, or that pointers dont
+        // actually get dereferenced
         *Xresult = Vglobal_pose_delta_x;
         *Yresult = Vglobal_pose_delta_y;
 

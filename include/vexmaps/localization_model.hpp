@@ -21,17 +21,17 @@ class LocalizationModel {
     virtual units::Pose getPose() = 0;
 
     /**
-     * @brief gets the previous available pose, if it exists
+     * @brief gets the previous available pose
      */
-    virtual std::optional<units::Pose> getLastPose() = 0;
+    virtual units::Pose getLastPose() = 0;
     /**
-     * @brief Get latest global pose delta, if it exists
+     * @brief Get latest global pose delta
      */
-    virtual std::optional<units::Pose> getGlobalPoseDelta() = 0;
+    virtual units::Pose getGlobalPoseDelta() = 0;
     /**
-     * @brief Get latest local pose delta, if it exists
+     * @brief Get latest local pose delta
      */
-    virtual std::optional<units::Pose> getLocalPoseDelta() = 0;
+    virtual units::Pose getLocalPoseDelta() = 0;
 
     /**
      * @brief returns a value representing the confidence of the current pose
