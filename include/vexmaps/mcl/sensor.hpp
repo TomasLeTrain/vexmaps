@@ -8,7 +8,7 @@ namespace vexmaps {
 class Sensor {
   public:
     virtual void update(Angle angle) = 0;
-    virtual Point getExpected() = 0;
+    virtual std::optional<Point> getExpected() = 0;
     virtual bool hasAvailableReading() = 0;
 
     virtual inline float evaluate(const Point& point) = 0;

@@ -63,7 +63,7 @@ class PfMotionModel : public LocalizationModel {
     std::unique_ptr<LocalizationModel> base_motion_model;
 
   public:
-    PfMotionModel(std::unique_ptr<LocalizationModel> base_motion_model,
+    PfMotionModel(std::unique_ptr<LocalizationModel>& base_motion_model,
                   MotionModelConfig motionModelConfig)
         : base_motion_model(std::move(base_motion_model)),
           motionModelConfig(motionModelConfig),

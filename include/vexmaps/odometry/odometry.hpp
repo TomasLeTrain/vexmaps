@@ -14,7 +14,7 @@
 #include "vexmaps/odometry/tracking_wheel.hpp"
 
 namespace vexmaps {
-class DrivetrainModel : public LocalizationModel {
+class OdometryModel : public LocalizationModel {
   private:
     MotorGroupTracking* left_tracker;
     MotorGroupTracking* right_tracker;
@@ -26,11 +26,6 @@ class DrivetrainModel : public LocalizationModel {
 
     // cant use units since its floats and precision does matter
     // all angles in radians, all distances in inches
-
-    double gear_ratio = 1;
-    double diameter = 3.25;
-    double track_width;
-    double circumference = diameter * M_PI;
 
     double last_imu_angle;
 
@@ -59,11 +54,15 @@ class DrivetrainModel : public LocalizationModel {
     Time latest_update_time = 0.0_sec;
 
   public:
-    DrivetrainModel(MotorGroupTracking* left_tracker,
-                    MotorGroupTracking* right_tracker,
-                    pros::Imu* imu)
+    OdometryModel(MotorGroupTracking* left_tracker,
+                  MotorGroupTracking* right_tracker,
+                  std::vector<HorizontalOdometryTracker*>&& horizontal_trackers,
+                  std::vector<VerticalOdometryTracker*>&& vertical_trackers,
+                  pros::Imu* imu)
         : left_tracker(left_tracker),
           right_tracker(right_tracker),
+          horizontal_trackers(std::move(horizontal_trackers)),
+          vertical_trackers(std::move(vertical_trackers)),
           imu(imu) {}
 
     /**
@@ -119,7 +118,8 @@ class DrivetrainModel : public LocalizationModel {
         double current_imu_angle = imu->get_rotation() * (M_PI / 360.0);
         double imu_angle_delta = current_imu_angle - last_imu_angle;
 
-        // makes it so that we dont have to deal with compass -> std rad conversion
+        // makes it so that we dont have to deal with compass -> std rad
+        // conversion
         angle_delta = -imu_angle_delta;
         angle = angle_delta + last_angle;
 
@@ -237,8 +237,9 @@ class DrivetrainModel : public LocalizationModel {
     }
 
     /**
-     * @brief returns a value representing the confidence of the current pose
-     * estimate (if the model supports it). returns nullopt if not supported.
+     * @brief returns a value representing the confidence of the current
+     * pose estimate (if the model supports it). returns nullopt if not
+     * supported.
      *
      * @return the confidence on the estimate (if available)
      */
@@ -263,6 +264,6 @@ class DrivetrainModel : public LocalizationModel {
         return latest_update_time;
     }
 
-    ~DrivetrainModel() override = default;
+    ~OdometryModel() override = default;
 };
 } // namespace vexmaps

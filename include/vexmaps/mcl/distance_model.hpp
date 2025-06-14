@@ -9,6 +9,7 @@
 #include "vexmaps/mcl/utils.hpp"
 #include <arm_neon.h>
 #include <cmath>
+#include <optional>
 
 namespace vexmaps {
 
@@ -62,11 +63,11 @@ class DistanceSensorModel : public Sensor {
     bool exit = false;
     bool vectorized = true;
 
-    bool disabled = false;
+    bool enabled = true;
 
   public:
-    DistanceSensorModel(const units::Pose offset,
-                        pros::Distance* distance_sensor,
+    DistanceSensorModel(pros::Distance* distance_sensor,
+                        const units::Pose offset,
                         std::string name)
         : offsets(offset),
           distance_sensor(std::move(distance_sensor)),
@@ -87,7 +88,7 @@ class DistanceSensorModel : public Sensor {
         this->measured_distance = from_mm(measured_mm);
 
         // distance sensor doesn't measure anything
-        exit = measured_mm == 9999 || disabled;
+        exit = measured_mm == 9999 || (!enabled);
 
         // not done for logging
         // if(exit) return;
@@ -241,5 +242,18 @@ class DistanceSensorModel : public Sensor {
     }
 
     ~DistanceSensorModel() override = default;
+
+    std::optional<Point> getExpected() override {
+        return std::nullopt;
+    }
+    void disable() override {
+        enabled = false;
+    }
+    void enable() override {
+        enabled = true;
+    }
+    bool getEnabled() override {
+        return enabled;
+    }
 };
 } // namespace vexmaps

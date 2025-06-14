@@ -7,12 +7,12 @@
 #include "vexmaps/mcl/config.hpp"
 #include "vexmaps/mcl/pf_motion_model.hpp"
 #include "vexmaps/mcl/sensor.hpp"
+#include "vexmaps/mcl/utils.hpp"
 #include <arm_neon.h>
 
 namespace vexmaps {
 
-template<size_t N, class PFConfig>
-    requires ValidPFConfig<PFConfig>
+template<size_t N>
 class ParticleFilter {
   private:
     // used for vectorization
@@ -24,13 +24,14 @@ class ParticleFilter {
     std::vector<Sensor*> sensors;
 
     PfMotionModel* motion_model;
+    PFConfiguration PFConfig;
 
     std::uniform_real_distribution<float> field_dist { -wall_length.internal(),
                                                        wall_length.internal() };
 
     std::uniform_real_distribution<float> cloud_dist {
-        -PFConfig::cloud_distribution_bounds.internal(),
-        PFConfig::cloud_distribution_bounds.internal()
+        -PFConfig.cloud_distribution_bounds.internal(),
+        PFConfig.cloud_distribution_bounds.internal()
     };
 
     uint64_t start_time;
@@ -75,7 +76,7 @@ class ParticleFilter {
         }
         last_motion_model_timestamp = current_timestamp;
 
-        if (PFConfig::usingVectorizedMotion) {
+        if (PFConfig.usingVectorizedMotion) {
 
             for (size_t i = 0; i < remaining_particles; i += 4) {
                 float32x4_t motionDataX, motionDataY;
@@ -189,7 +190,7 @@ class ParticleFilter {
         float weighted_x_sum = 0.0;
         float weighted_y_sum = 0.0;
 
-        if (PFConfig::usingVectorizedMotion) {
+        if (PFConfig.usingVectorizedMotion) {
             float32x4_t Vweighted_x_sum = vdupq_n_f32(0.0);
             float32x4_t Vweighted_y_sum = vdupq_n_f32(0.0);
 
@@ -294,7 +295,7 @@ class ParticleFilter {
     }
 
     void endUpdate() {
-        if (PFConfig::logging) {
+        if (PFConfig.logging) {
             printf("total weight: %f, time taken: %d, timestamp: %d\n",
                    total_weight,
                    pros::micros() - start_time,
@@ -315,9 +316,9 @@ class ParticleFilter {
 
   public:
     // managed by the base motion model
-    ParticleFilter(PfMotionModel<MotionModelConfig>* motionModel,
-                   std::vector<Sensor*>&& sensors)
+    ParticleFilter(PfMotionModel* motionModel, std::vector<Sensor*>&& sensors, PFConfiguration config)
         : motion_model(motionModel),
+          PFConfig(config),
           sensors(std::move(sensors)) {
         for (size_t i = 0; i < N; i++) {
             particles[i] = { 0.0_m, 0.0_m };
@@ -329,7 +330,7 @@ class ParticleFilter {
         sensors.emplace_back(sensor);
     }
 
-    units::Pose getPrediction() {
+    units::Pose getPose() {
         return prediction;
     }
 
@@ -338,7 +339,7 @@ class ParticleFilter {
 
         applyMotionModel();
 
-        if (PFConfig::logging) printf("start generation\n");
+        if (PFConfig.logging) printf("start generation\n");
 
         updateSensors();
 
@@ -361,9 +362,9 @@ class ParticleFilter {
             // instead we just update the prediction using the deltas from the
             // base motion model
             auto globalPoseDelta = motion_model->getGlobalPoseDelta();
-            updatePrediction(getPrediction().x + globalPoseDelta.x,
-                             getPrediction().y + globalPoseDelta.y,
-                             getPrediction().orientation +
+            updatePrediction(getPose().x + globalPoseDelta.x,
+                             getPose().y + globalPoseDelta.y,
+                             getPose().orientation +
                                globalPoseDelta.orientation);
             endUpdate();
             return;
@@ -395,7 +396,7 @@ class ParticleFilter {
         // sensors
         // TODO: come up with a better metric for the accuracy of particles
         if (active_sensors >= 2) {
-            if (total_weight <= PFConfig::low_weight_sum_threshold) {
+            if (total_weight <= PFConfig.low_weight_sum_threshold) {
                 // none of the particles are likely at all, meaning we have no
                 // clue where the robot could be
                 lost_iteration_count++;
@@ -403,7 +404,7 @@ class ParticleFilter {
                 printf(
                   "No particles are likely: sum is: %f, threshold is: " "%f\n, " "lost " "iterat" "ion " "count " "now: " "%d",
                   total_weight,
-                  PFConfig::low_weight_sum_threshold,
+                  PFConfig.low_weight_sum_threshold,
                   lost_iteration_count);
             } else {
                 // we are not lost this iteration
@@ -424,9 +425,9 @@ class ParticleFilter {
             weights[i] *= normalization_factor;
         }
 
-        if (PFConfig::logging) {
+        if (PFConfig.logging) {
             printf("start particles\n");
-            if (PFConfig::particle_logging) {
+            if (PFConfig.particle_logging) {
                 for (size_t i = 0; i < N; i++) {
                     printf("%.1f %.1f %.1f\n",
                            particles[i].x.convert(in),
@@ -446,13 +447,13 @@ class ParticleFilter {
         // generated particles, as we would like to resample based on their
         // accuracy, not the generated sensor particles
         for (size_t i = 0; i < N; i++) {
-            if (weights[i] < PFConfig::near_zero_epsilon) {
+            if (weights[i] < PFConfig.near_zero_epsilon) {
                 zero_particles++;
             }
         }
 
         if (static_cast<float>(zero_particles) >
-            PFConfig::near_zero_particle_percentage * static_cast<float>(N)) {
+            PFConfig.near_zero_particle_percentage * static_cast<float>(N)) {
             resampling = true;
         }
 
@@ -478,7 +479,7 @@ class ParticleFilter {
      * particle_filter.init_normal_around_point(start_point, 5_in);
      * @endcod
      */
-    void init_normal_around_point(const units::Pose pose,
+    void initNormal(const units::Pose pose,
                                   const Length std_deviation) {
         std::normal_distribution x_dist(pose.x.internal(),
                                         std_deviation.internal());
@@ -519,7 +520,24 @@ class ParticleFilter {
         motion_model->setPose({ avg_x, avg_y, orientation });
     }
 
-    // exposes motion_model attributes
+    void init() {
+        motion_model->init();
+
+        initUniform(-wall_length,
+                    -wall_length,
+                    wall_length,
+                    wall_length,
+                    0_stDeg);
+    }
+
+    std::optional<float> getConfidence() {
+        return std::nullopt;
+    }
+
+    // uses the motion model distance traveled since its less noisy
+    Length getDistanceTraveled() {
+        return motion_model->getDistanceTraveled();
+    }
 };
 
 } // namespace vexmaps

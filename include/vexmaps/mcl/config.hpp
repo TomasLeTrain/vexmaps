@@ -5,21 +5,6 @@
 
 namespace vexmaps {
 
-// Particle Filter concept
-template<typename Config>
-concept ValidPFConfig = requires {
-    // clang-format off
-    { Config::usingVectorizedMotion } -> std::convertible_to<bool>;
-    { Config::logging } -> std::convertible_to<bool>;
-    { Config::particle_logging } -> std::convertible_to<bool>;
-    { Config::low_weight_sum_threshold } -> std::convertible_to<float>;
-    { Config::near_zero_epsilon } -> std::convertible_to<float>;
-    { Config::near_zero_particle_percentage } -> std::convertible_to<float>;
-    { Config::cloud_distribution_bounds } -> std::convertible_to<Length>;
-
-    // clang-format on
-};
-
 // Distance Config concept
 template<typename Config>
 concept ValidDistanceConfig = requires {
@@ -34,27 +19,27 @@ concept ValidDistanceConfig = requires {
 };
 
 // default configs
-struct DefaultPFConfig {
+struct PFConfiguration {
     // using vectorized routines. set to off if using untested routines or stuff
     // breaks
-    static constexpr bool usingVectorizedMotion = true;
+    bool usingVectorizedMotion = true;
 
-    static constexpr bool logging = true;
-    static constexpr bool particle_logging = false;
+    bool logging = true;
+    bool particle_logging = false;
 
     // threshold for sum of weights before normalization which determines if the
     // iteration is lost this should be tuned so iterations which are clearly
     // lost can be determined and counted so the algorithm can recover
-    static constexpr float low_weight_sum_threshold = 0;
+    float low_weight_sum_threshold = 0;
 
     // weight which is considered to not contribute - its weight is very low
     // used to see number of non contributing particles for resampling
-    static constexpr float near_zero_epsilon = 0.8;
+    float near_zero_epsilon = 0.8;
 
     // percentage of particles which have weights near zero to resample
-    static constexpr float near_zero_particle_percentage = 0.5;
+    float near_zero_particle_percentage = 0.5;
 
-    static constexpr Length cloud_distribution_bounds = 2_in;
+    Length cloud_distribution_bounds = 2_in;
 };
 
 struct MotionModelConfig {
@@ -93,7 +78,7 @@ struct MotionModelConfig {
     Divided<Length, Angle> angle_to_forwards_noise = 0.01_in / 30_stDeg;
 } ;
 
-struct DefaultDistanceSensorConfig {
+struct DistanceSensorConfiguration {
     // all floats without units are in meters
     static constexpr double exp_l = 1.68;
     static constexpr double std_deviation = 0.03175; // 1.25 inches

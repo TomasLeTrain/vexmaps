@@ -1,5 +1,7 @@
 #pragma once
 
+#include "pros/rtos.h"
+#include "pros/rtos.hpp"
 #include "units/Pose.hpp"
 #include "units/units.hpp"
 
@@ -54,4 +56,17 @@ class LocalizationModel {
 
     virtual ~LocalizationModel() = default;
 };
+
+// makes a task to automatically run a localizationModel
+inline pros::Task createLocalizationTask(LocalizationModel* model){
+    pros::Task task{[&model] {
+        while(true){
+            uint32_t current_time = pros::millis();
+            model->update();
+            pros::c::task_delay_until(&current_time, to_msec(model->getTaskDeltaTime()));
+        }
+    }};
+    return task;
+}
+
 }; // namespace vexmaps

@@ -1,5 +1,8 @@
+#pragma once
+
 #include "pros/motor_group.hpp"
 #include "pros/rotation.hpp"
+#include "units/units.hpp"
 #include <climits>
 #include <cmath>
 
@@ -24,22 +27,26 @@ class MotorGroupTracking : public TrackingWheel {
     double last_distance;
     double delta_distance;
 
-    double circumference;
+    double diameter;
     double gear_ratio;
     double offset;
 
     pros::MotorGroup* motors;
 
   public:
-    MotorGroupTracking(pros::MotorGroup* motors, double circumference, double gear_ratio,double offset)
-        : motors(motors), circumference(circumference), gear_ratio(gear_ratio), offset(offset)
+    MotorGroupTracking(pros::MotorGroup* motors, double diameter, double gear_ratio,double offset)
+        : motors(motors), diameter(diameter), gear_ratio(gear_ratio), offset(offset)
+    {}
+
+    MotorGroupTracking(pros::MotorGroup* motors, Length diameter, double gear_ratio, Length offset)
+        : motors(motors), diameter(to_in(diameter)), gear_ratio(gear_ratio), offset(to_in(offset))
     {}
 
     void init() override {
         last_distance = 0.0;
 
         for (double& position : motors->get_position_all()) {
-            last_distance += position * circumference / gear_ratio;
+            last_distance += position * (diameter * M_PI) / gear_ratio;
         }
 
         last_distance /= static_cast<double>(motors->size());
@@ -49,7 +56,7 @@ class MotorGroupTracking : public TrackingWheel {
         double current_distance = 0.0;
 
         for (double& position : motors->get_position_all()) {
-            current_distance += position * circumference / gear_ratio;
+            current_distance += position * diameter / gear_ratio;
         }
 
         current_distance /= static_cast<double>(motors->size());
@@ -68,6 +75,8 @@ class MotorGroupTracking : public TrackingWheel {
     trackingOrientation getTrackingWheelType() override {
         return vertical;
     }
+
+    ~MotorGroupTracking() override = default;
 };
 
 template<trackingOrientation tracking_orientation>
@@ -80,15 +89,17 @@ class OdometryTracking : public TrackingWheel {
 
     double offset;
 
-    trackingOrientation tracking_type;
     double circumference;
     double gear_ratio;
 
     pros::Rotation * rotation_sensor;
 
     public:
-    OdometryTracking(pros::Rotation * rotation_sensor, double circumference, double gear_ratio,trackingOrientation tracking_type,double offset)
-        : rotation_sensor(rotation_sensor), circumference(circumference), gear_ratio(gear_ratio), tracking_type(tracking_type), offset(offset)
+    OdometryTracking(pros::Rotation * rotation_sensor, double circumference, double gear_ratio,double offset)
+        : rotation_sensor(rotation_sensor), circumference(circumference), gear_ratio(gear_ratio), offset(offset)
+    {}
+    OdometryTracking(pros::Rotation * rotation_sensor, Length circumference, double gear_ratio,Length offset)
+        : rotation_sensor(rotation_sensor), circumference(to_in(circumference)), gear_ratio(gear_ratio), offset(to_in(offset))
     {}
 
     void init() override {
@@ -118,6 +129,7 @@ class OdometryTracking : public TrackingWheel {
     trackingOrientation getTrackingWheelType() override {
         return tracking_orientation;
     }
+    ~OdometryTracking() override = default;
 };
 using VerticalOdometryTracker = OdometryTracking<vertical>;
 using HorizontalOdometryTracker = OdometryTracking<horizontal>;

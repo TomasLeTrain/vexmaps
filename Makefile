@@ -18,7 +18,7 @@ EXTRA_CXXFLAGS=
 
 LIBDIR=$(INCDIR)/$(LIBNAME)
 
-MAKEFLAGS=-j
+MAKEFLAGS=-j8
 
 # Set to 1 to enable hot/cold linking
 USE_PACKAGE:=1
