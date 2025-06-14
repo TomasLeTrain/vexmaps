@@ -22,30 +22,39 @@ namespace vexmaps {
  * @brief Wrapper for a localization model with support for adding noise.
  *
  */
-template<class PFConfig>
-    requires ValidPFConfig<PFConfig>
 class PfMotionModel : public LocalizationModel {
   private:
     std::uniform_real_distribution<float> average_distance_distribution;
     std::uniform_real_distribution<float> angle_distribution;
     std::uniform_real_distribution<float> drift_distribution;
 
-    Vuniform_float32_t Vaverage_distance_distribution;
-    Vuniform_float32_t Vangle_distribution;
-    Vuniform_float32_t Vdrift_distribution;
+    Vuniform_float32_t forwards_distribution;
 
-    Time last_update_timestamp = INFINITY * sec, update_timestamp = 0_sec,
-         delta_update_time = 0_sec;
+    float angle_a = 0;
+    float angle_b = 0;
+    float angle_k = 0;
+
+    float drift_a = 0;
+    float drift_b = 0;
+    float drift_k = 0;
+
+    // Vuniform_float32_t Vaverage_distance_distribution;
+    // Vuniform_float32_t Vangle_distribution;
+    // Vuniform_float32_t Vdrift_distribution;
+
+    Time update_timestamp = 0_sec;
 
     Angle abs_delta_theta = 0_stDeg;
 
-    float32x4_t Vsina, Vcosa, Vnew_sina, Vnew_cosa;
-    float sina, cosa, new_sina, new_cosa;
+    float32x4_t Vsina, Vcosa;
+    float sina, cosa;
 
-    float32x4_t Vglobal_pose_delta_x, Vglobal_pose_delta_y;
+    float global_pose_delta_x, global_pose_delta_y;
 
     units::Pose last_pose = { INFINITY * m, INFINITY* m, INFINITY* rad },
                 global_pose_delta;
+
+    MotionModelConfig motionModelConfig;
 
     /**
      * @brief Used to get an estimate for the Robot's movements. Owned and
@@ -54,8 +63,11 @@ class PfMotionModel : public LocalizationModel {
     std::unique_ptr<LocalizationModel> base_motion_model;
 
   public:
-    PfMotionModel(std::unique_ptr<LocalizationModel> base_motion_model)
-        : base_motion_model(std::move(base_motion_model)) {}
+    PfMotionModel(std::unique_ptr<LocalizationModel> base_motion_model,
+                  MotionModelConfig motionModelConfig)
+        : base_motion_model(std::move(base_motion_model)),
+          motionModelConfig(motionModelConfig),
+          forwards_distribution(robot_rng()) {}
 
     void init() override {
         base_motion_model->init();
@@ -73,15 +85,15 @@ class PfMotionModel : public LocalizationModel {
         return base_motion_model->getConfidence();
     }
 
-    std::optional<units::Pose> getGlobalPoseDelta() override {
+    units::Pose getGlobalPoseDelta() override {
         return base_motion_model->getGlobalPoseDelta();
     }
 
-    std::optional<units::Pose> getLocalPoseDelta() override {
+    units::Pose getLocalPoseDelta() override {
         return base_motion_model->getLocalPoseDelta();
     }
 
-    std::optional<units::Pose> getLastPose() override {
+    units::Pose getLastPose() override {
         return base_motion_model->getLastPose();
     }
 
@@ -112,19 +124,16 @@ class PfMotionModel : public LocalizationModel {
 
         abs_delta_theta = units::abs(global_pose_delta.orientation);
 
-        // noise factors based on velocity/acceleration
-        // const Length slip_noise =
-        //   units::abs(slip_distance_ratio * average_distance);
-        // const Length velocity_noise =
-        //   slip_velocity_factor * units::abs(average_vevlocity);
-        // const Length acceleration_slip_noise =
-        //   slip_acceleration_factor * units::abs(average_acceleration);
-
         const Length distance_noise =
-          DRIVE_NOISE2 + angle_vertical_noise_relation_factor * abs_delta_theta;
-        const Angle angle_noise = abs_delta_theta * ANGLE_NOISE;
+          motionModelConfig.forwards_noise +
+          motionModelConfig.angle_to_forwards_noise * abs_delta_theta;
+
+        const Angle angle_noise =
+          abs_delta_theta * motionModelConfig.angle_noise;
+
         const Length drift_noise =
-          DRIFT_NOISE + angle_drift_relation_factor * abs_delta_theta;
+          motionModelConfig.drift_noise +
+          motionModelConfig.angle_to_drift_noise * abs_delta_theta;
 
         average_distance_distribution =
           std::uniform_real_distribution<float>((-distance_noise).internal(),
@@ -139,28 +148,32 @@ class PfMotionModel : public LocalizationModel {
         sina = units::sin(current_pose.orientation);
         cosa = units::cos(current_pose.orientation);
 
-        if (usingVectorizedMotion) {
-            Vaverage_distance_distribution =
-              Vuniform_float32_t((-distance_noise).internal(),
-                                 (+distance_noise).internal(),
-                                 robot_rng());
-            Vangle_distribution = Vuniform_float32_t((-angle_noise).internal(),
-                                                     (+angle_noise).internal(),
-                                                     robot_rng());
-            Vdrift_distribution = Vuniform_float32_t((-drift_noise).internal(),
-                                                     (+drift_noise).internal(),
-                                                     robot_rng());
+        forwards_distribution = Vuniform_float32_t((-distance_noise).internal(),
+                                                   (+distance_noise).internal(),
+                                                   robot_rng());
+        angle_a = (-angle_noise).internal();
+        angle_b = (+angle_noise).internal();
+        angle_k = (angle_b - angle_a) / static_cast<float>(UINT32_MAX);
 
-            Vsina = vld1q_dup_f32(&sina);
-            Vcosa = vld1q_dup_f32(&cosa);
+        drift_a = (-drift_noise).internal();
+        drift_b = (+drift_noise).internal();
+        drift_k = (drift_b - drift_a) / static_cast<float>(UINT32_MAX);
 
-            // needed since vld1q_dup_f32 takes a float pointer
-            float global_pose_delta_x = global_pose_delta.x.internal();
-            float global_pose_delta_y = global_pose_delta.y.internal();
+        //
+        // vector-related
+        // Vaverage_distance_distribution =
+        //   Vuniform_float32_t((-distance_noise).internal(),
+        //                      (+distance_noise).internal(),
+        //                      robot_rng());
+        // Vangle_distribution = Vuniform_float32_t((-angle_noise).internal(),
+        //                                          (+angle_noise).internal(),
+        //                                          robot_rng());
+        // Vdrift_distribution = Vuniform_float32_t((-drift_noise).internal(),
+        //                                          (+drift_noise).internal(),
+        //                                          robot_rng());
 
-            Vglobal_pose_delta_x = vld1q_dup_f32(&global_pose_delta_x);
-            Vglobal_pose_delta_y = vld1q_dup_f32(&global_pose_delta_y);
-        }
+        global_pose_delta_x = global_pose_delta.x.internal();
+        global_pose_delta_y = global_pose_delta.y.internal();
 
         // update timestamps
         update_timestamp = from_msec(pros::millis());
@@ -172,16 +185,27 @@ class PfMotionModel : public LocalizationModel {
      * @param result vector where the motion updates get stored
      */
     inline void VnoisyGlobalDelta(float32x4_t* Xresult, float32x4_t* Yresult) {
-        float32x4_t vertical_noise = Vaverage_distance_distribution();
-        float32x4_t horizontal_noise = Vdrift_distribution();
-        float32x4_t angle_noise = Vangle_distribution();
+        // float32x4_t vertical_noise = Vaverage_distance_distribution();
+        // float32x4_t horizontal_noise = Vdrift_distribution();
+        // float32x4_t angle_noise = Vangle_distribution();
 
+        float32x4_t vertical_noise = forwards_distribution();
+        float32x4_t horizontal_noise =
+          forwards_distribution.get_float(drift_a, drift_k);
+        float32x4_t angle_noise =
+          forwards_distribution.get_float(angle_a, angle_k);
+
+        float32x4_t Vsina = vdupq_n_f32(sina);
+        float32x4_t Vcosa = vdupq_n_f32(cosa);
+
+        float32x4_t Vnew_sina, Vnew_cosa;
         Vsincos_taylor_delta(angle_noise, Vsina, Vcosa, &Vnew_sina, &Vnew_cosa);
 
         // TODO: check this actually gets inlined, or that pointers dont
         // actually get dereferenced
-        *Xresult = Vglobal_pose_delta_x;
-        *Yresult = Vglobal_pose_delta_y;
+        //
+        *Xresult = vdupq_n_f32(global_pose_delta_x);
+        *Yresult = vdupq_n_f32(global_pose_delta_y);
 
         *Xresult = vmlaq_f32(*Xresult, vertical_noise, Vnew_cosa);
         *Yresult = vmlaq_f32(*Yresult, vertical_noise, Vnew_sina);
@@ -201,7 +225,8 @@ class PfMotionModel : public LocalizationModel {
         const Length horizontal_noise = drift_distribution(rng) * m;
         const float angle_noise = angle_distribution(rng);
 
-        sincos_taylor_delta(angle_noise, sina, cosa, &new_sina, &new_sina);
+        float new_sina, new_cosa;
+        sincos_taylor_delta(angle_noise, sina, cosa, &new_sina, &new_cosa);
 
         // rotates forward and sideways movement to face the robot's heading
         return { global_pose_delta.x + vertical_noise * new_cosa -

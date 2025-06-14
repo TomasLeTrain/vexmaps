@@ -1,5 +1,9 @@
 #include "main.h"
+#include "pros/abstract_motor.hpp"
+#include "vexmaps/mcl/config.hpp"
 #include "vexmaps/particle_filter_model.hpp"
+#include "vexmaps/odometry/odometry.hpp"
+#include "vexmaps/odometry/tracking_wheel.hpp"
 
 /**
  * Runs initialization code. This occurs as soon as the program is started.
@@ -8,7 +12,22 @@
  * to keep execution time for this mode under a few seconds.
  */
 void initialize() {
-    vexmaps::ParticleFilterModel<1024> pf_model(nullptr);
+    pros::Motor left_motor_1(1,pros::MotorCartridge::blue,pros::MotorUnits::counts);
+    pros::Motor right_motor_1(2,pros::MotorCartridge::blue,pros::MotorUnits::counts);
+
+    pros::MotorGroup left_motors(left_motor_1);
+    pros::MotorGroup right_motors(right_motor_1);
+
+    double dt_gear_ratio = (48.0/36.0) * 300;
+    double dt_circumference = 3.25; // inches
+    double track_width = 14; // inches
+
+    vexmaps::MotorGroupTracking left_dt_tracker(&left_motors,3.25,dt_gear_ratio, -(track_width)/2);
+    vexmaps::MotorGroupTracking right_dt_tracker(&right_motors,3.25,dt_gear_ratio,(track_width)/2);
+
+    // initialize normal odometry
+
+    vexmaps::ParticleFilterModel<1024, vexmaps::DefaultPFConfig> pf_model();
     pf_model.init();
     pf_model.update();
 }

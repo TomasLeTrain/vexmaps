@@ -11,9 +11,8 @@
 
 namespace vexmaps {
 
-template<size_t N, class PFConfig, class MotionModelConfig>
-    requires ValidPFConfig<PFConfig> &&
-             ValidMotionModelConfig<MotionModelConfig>
+template<size_t N, class PFConfig>
+    requires ValidPFConfig<PFConfig>
 class ParticleFilter {
   private:
     // used for vectorization
@@ -24,14 +23,15 @@ class ParticleFilter {
 
     std::vector<Sensor*> sensors;
 
-    std::unique_ptr<PfMotionModel<MotionModelConfig>> motion_model;
+    PfMotionModel* motion_model;
 
     std::uniform_real_distribution<float> field_dist { -wall_length.internal(),
                                                        wall_length.internal() };
 
-    // TODO: make this configurable
-    std::uniform_real_distribution<float> cloud_dist { -(2_in).internal(),
-                                                       (2_in).internal() };
+    std::uniform_real_distribution<float> cloud_dist {
+        -PFConfig::cloud_distribution_bounds.internal(),
+        PFConfig::cloud_distribution_bounds.internal()
+    };
 
     uint64_t start_time;
 
@@ -68,8 +68,7 @@ class ParticleFilter {
         auto current_timestamp = motion_model->getLatestUpdateTimestamp();
         auto current_global_delta = motion_model->getGlobalPoseDelta();
 
-        if (current_timestamp == last_motion_model_timestamp &&
-            current_global_delta.has_value()) {
+        if (current_timestamp == last_motion_model_timestamp) {
             // same update from before or no update available
             // either way don't move particles
             return;
@@ -316,9 +315,9 @@ class ParticleFilter {
 
   public:
     // managed by the base motion model
-    ParticleFilter(std::unique_ptr<PfMotionModel> motionModel,
+    ParticleFilter(PfMotionModel<MotionModelConfig>* motionModel,
                    std::vector<Sensor*>&& sensors)
-        : motion_model(std::move(motionModel)),
+        : motion_model(motionModel),
           sensors(std::move(sensors)) {
         for (size_t i = 0; i < N; i++) {
             particles[i] = { 0.0_m, 0.0_m };
@@ -362,12 +361,10 @@ class ParticleFilter {
             // instead we just update the prediction using the deltas from the
             // base motion model
             auto globalPoseDelta = motion_model->getGlobalPoseDelta();
-            if (globalPoseDelta.has_value()) {
-                updatePrediction(getPrediction().x + globalPoseDelta.value().x,
-                                 getPrediction().y + globalPoseDelta.value().y,
-                                 getPrediction().orientation +
-                                   globalPoseDelta.value().orientation);
-            }
+            updatePrediction(getPrediction().x + globalPoseDelta.x,
+                             getPrediction().y + globalPoseDelta.y,
+                             getPrediction().orientation +
+                               globalPoseDelta.orientation);
             endUpdate();
             return;
         }

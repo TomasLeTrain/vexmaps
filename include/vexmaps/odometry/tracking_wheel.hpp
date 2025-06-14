@@ -31,8 +31,8 @@ class MotorGroupTracking : public TrackingWheel {
     pros::MotorGroup* motors;
 
   public:
-    MotorGroupTracking(pros::MotorGroup* motors, double circumference, double gear_ratio,double track_width)
-        : motors(motors), circumference(circumference), gear_ratio(gear_ratio), offset(track_width/2.0)
+    MotorGroupTracking(pros::MotorGroup* motors, double circumference, double gear_ratio,double offset)
+        : motors(motors), circumference(circumference), gear_ratio(gear_ratio), offset(offset)
     {}
 
     void init() override {
