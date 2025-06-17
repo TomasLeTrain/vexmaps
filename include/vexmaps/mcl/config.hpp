@@ -88,7 +88,7 @@ struct DistanceSensorConfiguration {
     static constexpr double expCoeff = 0.618;
     static constexpr double normalCoeff = 0.194;
 
-    static constexpr bool logging = true;
+    static constexpr bool logging = false;
 };
 
 } // namespace vexmaps
