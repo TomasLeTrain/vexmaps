@@ -190,52 +190,47 @@ class ParticleFilter {
 
     void updatePredictionBasedOnParticles() {
 
-        Length Uweighted_x_sum = 0.0_m;
-        Length Uweighted_y_sum = 0.0_m;
+        float weighted_x_sum = 0.0;
+        float weighted_y_sum = 0.0;
 
-        for (size_t i = 0; i < N; i++) {
-            Uweighted_x_sum += particles[i].x * weights[i];
-            Uweighted_y_sum += particles[i].y * weights[i];
-        }
-
-        float weighted_x_sum = Uweighted_x_sum.internal();
-        float weighted_y_sum = Uweighted_y_sum.internal();
-        // float weighted_x_sum = 0.0;
-        // float weighted_y_sum = 0.0;
-        //
-        // if (PFConfig.usingVectorizedMotion) {
-        //     float32x4_t Vweighted_x_sum = vdupq_n_f32(0.0);
-        //     float32x4_t Vweighted_y_sum = vdupq_n_f32(0.0);
-        //
-        //     for (size_t i = 0; i < remaining_particles; i += 4) {
-        //         float32x4x2_t points = vld2q_f32((float*)&particles[i]);
-        //         float32x4_t current_weights = vld1q_f32(&weights[i]);
-        //
-        //         Vweighted_x_sum =
-        //           vmlaq_f32(Vweighted_x_sum, points.val[0], current_weights);
-        //         Vweighted_y_sum =
-        //           vmlaq_f32(Vweighted_y_sum, points.val[1], current_weights);
-        //     }
-        //
-        //     for (size_t i = remaining_particles; i < N; i++) {
-        //         weighted_x_sum += particles[i].x.internal() * weights[i];
-        //         weighted_x_sum += particles[i].y.internal() * weights[i];
-        //     }
-        //     weighted_x_sum += vgetq_lane_f32(Vweighted_x_sum, 0) +
-        //                       vgetq_lane_f32(Vweighted_x_sum, 1) +
-        //                       vgetq_lane_f32(Vweighted_x_sum, 2) +
-        //                       vgetq_lane_f32(Vweighted_x_sum, 3);
-        //
-        //     weighted_y_sum += vgetq_lane_f32(Vweighted_y_sum, 0) +
-        //                       vgetq_lane_f32(Vweighted_y_sum, 1) +
-        //                       vgetq_lane_f32(Vweighted_y_sum, 2) +
-        //                       vgetq_lane_f32(Vweighted_y_sum, 3);
-        // } else {
-        //     for (size_t i = 0; i < N; i++) {
-        //         weighted_x_sum += particles[i].x.internal() * weights[i];
-        //         weighted_x_sum += particles[i].y.internal() * weights[i];
-        //     }
+        // for (size_t i = 0; i < N; i++) {
+        //     weighted_x_sum += particles[i].x.internal() * weights[i];
+        //     weighted_y_sum += particles[i].y.internal() * weights[i];
         // }
+
+        if (PFConfig.usingVectorizedMotion) {
+            float32x4_t Vweighted_x_sum = vdupq_n_f32(0.0);
+            float32x4_t Vweighted_y_sum = vdupq_n_f32(0.0);
+
+            for (size_t i = 0; i < remaining_particles; i += 4) {
+                float32x4x2_t points = vld2q_f32((float*)&particles[i]);
+                float32x4_t current_weights = vld1q_f32(&weights[i]);
+
+                Vweighted_x_sum =
+                  vmlaq_f32(Vweighted_x_sum, points.val[0], current_weights);
+                Vweighted_y_sum =
+                  vmlaq_f32(Vweighted_y_sum, points.val[1], current_weights);
+            }
+
+            for (size_t i = remaining_particles; i < N; i++) {
+                weighted_x_sum += particles[i].x.internal() * weights[i];
+                weighted_x_sum += particles[i].y.internal() * weights[i];
+            }
+            weighted_x_sum += vgetq_lane_f32(Vweighted_x_sum, 0) +
+                              vgetq_lane_f32(Vweighted_x_sum, 1) +
+                              vgetq_lane_f32(Vweighted_x_sum, 2) +
+                              vgetq_lane_f32(Vweighted_x_sum, 3);
+
+            weighted_y_sum += vgetq_lane_f32(Vweighted_y_sum, 0) +
+                              vgetq_lane_f32(Vweighted_y_sum, 1) +
+                              vgetq_lane_f32(Vweighted_y_sum, 2) +
+                              vgetq_lane_f32(Vweighted_y_sum, 3);
+        } else {
+            for (size_t i = 0; i < N; i++) {
+                weighted_x_sum += particles[i].x.internal() * weights[i];
+                weighted_x_sum += particles[i].y.internal() * weights[i];
+            }
+        }
 
         if (active_sensors >= 2) {
             // updates prediction before resampling, as resampling sets all
@@ -476,22 +471,14 @@ class ParticleFilter {
 
         int zero_particles = 0;
 
-        // TODO: switch to a better metric for non-contributing particles
-        // base the near zero particle percentage only on non sensor
-        // generated particles, as we would like to resample based on their
-        // accuracy, not the generated sensor particles
-
-        // for (size_t i = 0; i < N; i++) {
-        //     if (weights[i] < PFConfig.near_zero_epsilon) {
-        //         zero_particles++;
-        //     }
-        // }
+        // effective_sample_size = sum(w[i]) / sum (w[i]^2) -> 1 / sum (w[i]^2)
         float ess = 0;
 
         for (size_t i = 0; i < N; i++) {
             ess += weights[i] * weights[i];
         }
-        ess = 1/ess;
+        
+        ess = sum_factor / ess;
 
         if (ess < PFConfig.near_zero_particle_percentage * static_cast<float>(N)) {
             resampling = true;

@@ -24,7 +24,7 @@ struct PFConfiguration {
     // breaks
     bool usingVectorizedMotion = true;
 
-    bool logging = true;
+    bool logging = false;
     bool particle_logging = false;
 
     // threshold for sum of weights before normalization which determines if the
@@ -34,10 +34,10 @@ struct PFConfiguration {
 
     // weight which is considered to not contribute - its weight is very low
     // used to see number of non contributing particles for resampling
-    float near_zero_epsilon = 0.8;
+    // float near_zero_epsilon = 0.8;
 
     // percentage of particles which have weights near zero to resample
-    float near_zero_particle_percentage = 0.7;
+    float near_zero_particle_percentage = 0.6;
 
     Length cloud_distribution_bounds = 2_in;
 };

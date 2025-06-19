@@ -12,7 +12,7 @@
 #include <initializer_list>
 #include <memory>
 
-vexmaps::MotionModelConfig motion_model_config = {.forwards_noise = 0.04_in};
+vexmaps::MotionModelConfig motion_model_config = { .forwards_noise = 0.04_in };
 vexmaps::PFConfiguration Pfconfig = { .logging = true, .particle_logging = true };
 
 
