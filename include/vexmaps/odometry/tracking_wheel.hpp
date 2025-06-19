@@ -95,10 +95,10 @@ class OdometryTracking : public TrackingWheel {
     pros::Rotation * rotation_sensor;
 
     public:
-    OdometryTracking(pros::Rotation * rotation_sensor, double diameter, double gear_ratio,double offset)
+    OdometryTracking(pros::Rotation * rotation_sensor, double diameter, double gear_ratio, double offset)
         : rotation_sensor(rotation_sensor), diameter(diameter), gear_ratio(gear_ratio), offset(offset)
     {}
-    OdometryTracking(pros::Rotation * rotation_sensor, Length diameter, double gear_ratio,Length offset)
+    OdometryTracking(pros::Rotation * rotation_sensor, Length diameter, double gear_ratio, Length offset)
         : rotation_sensor(rotation_sensor), diameter(to_in(diameter)), gear_ratio(gear_ratio), offset(to_in(offset))
     {}
 
@@ -115,7 +115,6 @@ class OdometryTracking : public TrackingWheel {
         position_delta = current_position - last_position;
 
         delta_distance = (static_cast<double>(position_delta) * diameter * M_PI / 36000.0) / gear_ratio;
-        // printf("erm: %d %d %d %f\n",current_position,last_position,position_delta,delta_distance);
 
         last_position = current_position;
     }

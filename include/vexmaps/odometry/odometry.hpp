@@ -56,21 +56,23 @@ class OdometryModel : public LocalizationModel {
   public:
     OdometryModel(MotorGroupTracking* left_tracker,
                   MotorGroupTracking* right_tracker,
-                  std::vector<HorizontalOdometryTracker*>&& horizontal_trackers,
-                  std::vector<VerticalOdometryTracker*>&& vertical_trackers,
+                  std::initializer_list<HorizontalOdometryTracker*> horizontal_trackers,
+                  std::initializer_list<VerticalOdometryTracker*> vertical_trackers,
                   pros::Imu* imu)
         : left_tracker(left_tracker),
           right_tracker(right_tracker),
-          horizontal_trackers(std::move(horizontal_trackers)),
-          vertical_trackers(std::move(vertical_trackers)),
+          horizontal_trackers(horizontal_trackers),
+          vertical_trackers(vertical_trackers),
           imu(imu) {}
 
     /**
      * @brief Should be called once to initialize the model
      */
     void init() override {
+        imu->set_heading(0);
+        
         // last_imu_angle = imu->get_rotation() * (M_PI / 360.0);
-        last_imu_angle = imu->get_rotation() * (M_PI / 180.0);
+        last_imu_angle = 0;
 
         double local_y_delta = 0;
         double local_x_delta = 0;
@@ -123,6 +125,7 @@ class OdometryModel : public LocalizationModel {
         }else{
             printf("warning: imu not finite\n");
             current_imu_angle = last_imu_angle;
+            // return;
         }
 
         // printf("current_imu_angle: %f\n",current_imu_angle);
@@ -182,7 +185,7 @@ class OdometryModel : public LocalizationModel {
 
             for (auto&& tracker : horizontal_trackers) {
                 local_x_delta += sin_multiplier * (tracker->getDeltaDistance() / angle_delta + tracker->getOffset());
-                // printf("%f\\right),",tracker->getDeltaDistance() / angle_delta);
+                // printf("%f\\right),\n",tracker->getDeltaDistance() / angle_delta);
                 x_tracker_count += 1.0;
             }
         }

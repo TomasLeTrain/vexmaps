@@ -12,17 +12,34 @@
 #include "vexmath/functions/vectorized_trig_taylor.hpp"
 #include <arm_neon.h>
 #include <cmath>
+#include <memory>
 #include <random>
 
 // TODO: add settings struct to be able to configure settings
 //
 namespace vexmaps {
+
+/**
+ * @class BasePfMotionModel
+ * @brief Base class without template specialization. Allows passing around
+ * pointers without template arguments.
+ *
+ */
+class BasePfMotionModel : public LocalizationModel {
+  public:
+    virtual inline void VnoisyGlobalDelta(float32x4_t* Xresult,
+                                          float32x4_t* Yresult) = 0;
+    virtual Point noisyGlobalDelta() = 0;
+};
+
 /**
  * @class MotionModel
  * @brief Wrapper for a localization model with support for adding noise.
  *
  */
-class PfMotionModel : public LocalizationModel {
+template<typename ModelType>
+    requires std::derived_from<ModelType, LocalizationModel>
+class PfMotionModel : public BasePfMotionModel {
   private:
     std::uniform_real_distribution<float> average_distance_distribution;
     std::uniform_real_distribution<float> angle_distribution;
@@ -60,49 +77,50 @@ class PfMotionModel : public LocalizationModel {
      * @brief Used to get an estimate for the Robot's movements. Owned and
      * managed by this class only.
      */
-    std::unique_ptr<LocalizationModel> base_motion_model;
+    ModelType base_motion_model;
 
   public:
-    PfMotionModel(std::unique_ptr<LocalizationModel>& base_motion_model,
-                  MotionModelConfig motionModelConfig)
-        : base_motion_model(std::move(base_motion_model)),
+    template<typename... Args>
+        requires std::is_constructible_v<ModelType, Args...>
+    PfMotionModel(MotionModelConfig motionModelConfig, Args&&... args)
+        : base_motion_model(std::forward<Args>(args)...),
           motionModelConfig(motionModelConfig),
           forwards_distribution(robot_rng()) {}
 
     void init() override {
-        base_motion_model->init();
+        base_motion_model.init();
     }
 
     units::Pose getPose() override {
-        return base_motion_model->getPose();
+        return base_motion_model.getPose();
     }
 
     void setPose(units::Pose new_pose) override {
-        base_motion_model->setPose(new_pose);
+        base_motion_model.setPose(new_pose);
     }
 
     std::optional<float> getConfidence() override {
-        return base_motion_model->getConfidence();
+        return base_motion_model.getConfidence();
     }
 
     units::Pose getGlobalPoseDelta() override {
-        return base_motion_model->getGlobalPoseDelta();
+        return base_motion_model.getGlobalPoseDelta();
     }
 
     units::Pose getLocalPoseDelta() override {
-        return base_motion_model->getLocalPoseDelta();
+        return base_motion_model.getLocalPoseDelta();
     }
 
     units::Pose getLastPose() override {
-        return base_motion_model->getLastPose();
+        return base_motion_model.getLastPose();
     }
 
     Length getDistanceTraveled() override {
-        return base_motion_model->getDistanceTraveled();
+        return base_motion_model.getDistanceTraveled();
     }
 
     Time getTaskDeltaTime() override {
-        return base_motion_model->getTaskDeltaTime();
+        return base_motion_model.getTaskDeltaTime();
     }
 
     Time getLatestUpdateTimestamp() override {
@@ -116,11 +134,11 @@ class PfMotionModel : public LocalizationModel {
     // decrease noise
     void update() override {
         // update base motion model first
-        base_motion_model->update();
+        base_motion_model.update();
 
-        units::Pose current_pose = base_motion_model->getPose();
+        units::Pose current_pose = base_motion_model.getPose();
 
-        units::Pose global_pose_delta = base_motion_model->getGlobalPoseDelta();
+        units::Pose global_pose_delta = base_motion_model.getGlobalPoseDelta();
 
         abs_delta_theta = units::abs(global_pose_delta.orientation);
 
@@ -184,7 +202,8 @@ class PfMotionModel : public LocalizationModel {
      *
      * @param result vector where the motion updates get stored
      */
-    inline void VnoisyGlobalDelta(float32x4_t* Xresult, float32x4_t* Yresult) {
+    inline void VnoisyGlobalDelta(float32x4_t* Xresult,
+                                  float32x4_t* Yresult) override {
         // float32x4_t vertical_noise = Vaverage_distance_distribution();
         // float32x4_t horizontal_noise = Vdrift_distribution();
         // float32x4_t angle_noise = Vangle_distribution();
@@ -220,7 +239,7 @@ class PfMotionModel : public LocalizationModel {
      *
      * @return Noisy global delta
      */
-    Point noisyGlobalDelta() {
+    Point noisyGlobalDelta() override {
         const Length vertical_noise = average_distance_distribution(rng) * m;
         const Length horizontal_noise = drift_distribution(rng) * m;
         const float angle_noise = angle_distribution(rng);
@@ -235,5 +254,4 @@ class PfMotionModel : public LocalizationModel {
                    horizontal_noise * new_cosa };
     }
 };
-
 } // namespace vexmaps

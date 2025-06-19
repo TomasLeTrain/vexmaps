@@ -61,7 +61,6 @@ class DistanceSensorModel : public Sensor {
 
     // determines whether or not readings from this sensor are considered
     bool exit = false;
-    bool vectorized = true;
 
     bool enabled = true;
 
@@ -144,8 +143,8 @@ class DistanceSensorModel : public Sensor {
         constantFactor = randomFactor + expFactor;
 
         if (DistanceSensorConfig::logging) {
-            // d_name:distance,confidence,std,exit,obj_size
-            std::cout << "d_" << name << ":" << measured_distance.convert(in)
+            // name:distance,confidence,std,exit,obj_size
+            std::cout << name << ":" << measured_distance.convert(in)
                       << "," << distance_sensor->get_confidence() << ","
                       << DistanceSensorConfig::std_deviation << ","
                       << (exit ? "true" : "false") << ","
@@ -154,11 +153,11 @@ class DistanceSensorModel : public Sensor {
     }
 
     bool hasAvailableReading() override {
-        return exit;
+        return !exit;
     }
 
     bool getVectorized() override {
-        return vectorized;
+        return true;
     }
 
     // assumes that its only getting called if exit is false

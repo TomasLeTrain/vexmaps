@@ -23,8 +23,11 @@ class ParticleFilter {
 
     std::vector<Sensor*> sensors;
 
-    PfMotionModel* motion_model;
+    BasePfMotionModel* motion_model;
     PFConfiguration PFConfig;
+    
+    // global pose delta from the base motion model
+    units::Pose globalPoseDelta;
 
     std::uniform_real_distribution<float> field_dist { -wall_length.internal(),
                                                        wall_length.internal() };
@@ -40,11 +43,16 @@ class ParticleFilter {
 
     int lost_iteration_count = 0;
 
+    bool appliedMotionModel;
+    bool weightedParticles;
+    bool appliedResampling;
+
     /**
      * @brief number to which all particles sum to. Basically normalizing the
      * particles then multiplying them by this factor
      */
-    const float sum_factor = N;
+    // const float sum_factor = N;
+    const float sum_factor = 1;
     /**
      * @brief average weight of a particle. Effectively we "normalize" but not
      * to 1, instead to sum_factor
@@ -65,6 +73,7 @@ class ParticleFilter {
     // -- functions called in update -- //
 
     void applyMotionModel() {
+        globalPoseDelta = units::Pose(0_m,0_m,0_stDeg);
         // only applies motion updates if there are new available deltas
         auto current_timestamp = motion_model->getLatestUpdateTimestamp();
         auto current_global_delta = motion_model->getGlobalPoseDelta();
@@ -74,6 +83,8 @@ class ParticleFilter {
             // either way don't move particles
             return;
         }
+        appliedMotionModel = true;
+        globalPoseDelta = current_global_delta;
         last_motion_model_timestamp = current_timestamp;
 
         if (PFConfig.usingVectorizedMotion) {
@@ -179,50 +190,52 @@ class ParticleFilter {
 
     void updatePredictionBasedOnParticles() {
 
-        // Length weighted_x_sum = 0.0_m;
-        // Length weighted_y_sum = 0.0_m;
-        //
-        // for (size_t i = 0; i < N; i++) {
-        //     weighted_x_sum += particles[i].x * weights[i];
-        //     weighted_y_sum += particles[i].y * weights[i];
-        // }
+        Length Uweighted_x_sum = 0.0_m;
+        Length Uweighted_y_sum = 0.0_m;
 
-        float weighted_x_sum = 0.0;
-        float weighted_y_sum = 0.0;
-
-        if (PFConfig.usingVectorizedMotion) {
-            float32x4_t Vweighted_x_sum = vdupq_n_f32(0.0);
-            float32x4_t Vweighted_y_sum = vdupq_n_f32(0.0);
-
-            for (size_t i = 0; i < remaining_particles; i += 4) {
-                float32x4x2_t points = vld2q_f32((float*)&particles[i]);
-                float32x4_t current_weights = vld1q_f32(&weights[i]);
-
-                Vweighted_x_sum =
-                  vmlaq_f32(Vweighted_x_sum, points.val[0], current_weights);
-                Vweighted_y_sum =
-                  vmlaq_f32(Vweighted_y_sum, points.val[1], current_weights);
-            }
-
-            for (size_t i = remaining_particles; i < N; i++) {
-                weighted_x_sum += particles[i].x.internal() * weights[i];
-                weighted_x_sum += particles[i].y.internal() * weights[i];
-            }
-            weighted_x_sum += vgetq_lane_f32(Vweighted_x_sum, 0) +
-                              vgetq_lane_f32(Vweighted_x_sum, 1) +
-                              vgetq_lane_f32(Vweighted_x_sum, 2) +
-                              vgetq_lane_f32(Vweighted_x_sum, 3);
-
-            weighted_y_sum += vgetq_lane_f32(Vweighted_y_sum, 0) +
-                              vgetq_lane_f32(Vweighted_y_sum, 1) +
-                              vgetq_lane_f32(Vweighted_y_sum, 2) +
-                              vgetq_lane_f32(Vweighted_y_sum, 3);
-        } else {
-            for (size_t i = 0; i < N; i++) {
-                weighted_x_sum += particles[i].x.internal() * weights[i];
-                weighted_x_sum += particles[i].y.internal() * weights[i];
-            }
+        for (size_t i = 0; i < N; i++) {
+            Uweighted_x_sum += particles[i].x * weights[i];
+            Uweighted_y_sum += particles[i].y * weights[i];
         }
+
+        float weighted_x_sum = Uweighted_x_sum.internal();
+        float weighted_y_sum = Uweighted_y_sum.internal();
+        // float weighted_x_sum = 0.0;
+        // float weighted_y_sum = 0.0;
+        //
+        // if (PFConfig.usingVectorizedMotion) {
+        //     float32x4_t Vweighted_x_sum = vdupq_n_f32(0.0);
+        //     float32x4_t Vweighted_y_sum = vdupq_n_f32(0.0);
+        //
+        //     for (size_t i = 0; i < remaining_particles; i += 4) {
+        //         float32x4x2_t points = vld2q_f32((float*)&particles[i]);
+        //         float32x4_t current_weights = vld1q_f32(&weights[i]);
+        //
+        //         Vweighted_x_sum =
+        //           vmlaq_f32(Vweighted_x_sum, points.val[0], current_weights);
+        //         Vweighted_y_sum =
+        //           vmlaq_f32(Vweighted_y_sum, points.val[1], current_weights);
+        //     }
+        //
+        //     for (size_t i = remaining_particles; i < N; i++) {
+        //         weighted_x_sum += particles[i].x.internal() * weights[i];
+        //         weighted_x_sum += particles[i].y.internal() * weights[i];
+        //     }
+        //     weighted_x_sum += vgetq_lane_f32(Vweighted_x_sum, 0) +
+        //                       vgetq_lane_f32(Vweighted_x_sum, 1) +
+        //                       vgetq_lane_f32(Vweighted_x_sum, 2) +
+        //                       vgetq_lane_f32(Vweighted_x_sum, 3);
+        //
+        //     weighted_y_sum += vgetq_lane_f32(Vweighted_y_sum, 0) +
+        //                       vgetq_lane_f32(Vweighted_y_sum, 1) +
+        //                       vgetq_lane_f32(Vweighted_y_sum, 2) +
+        //                       vgetq_lane_f32(Vweighted_y_sum, 3);
+        // } else {
+        //     for (size_t i = 0; i < N; i++) {
+        //         weighted_x_sum += particles[i].x.internal() * weights[i];
+        //         weighted_x_sum += particles[i].y.internal() * weights[i];
+        //     }
+        // }
 
         if (active_sensors >= 2) {
             // updates prediction before resampling, as resampling sets all
@@ -240,6 +253,12 @@ class ParticleFilter {
             // basically simulating a distance sensor reset
             // this might be impossible since the wall being detected (and
             // therefore the axis) can change between particles
+            //
+            // we always need to update the prediction even if not based on particles
+            updatePrediction(getPose().x + globalPoseDelta.x,
+                             getPose().y + globalPoseDelta.y,
+                             getPose().orientation +
+                               globalPoseDelta.orientation);
         }
     }
 
@@ -296,10 +315,14 @@ class ParticleFilter {
 
     void endUpdate() {
         if (PFConfig.logging) {
-            printf("total weight: %f, time taken: %d, timestamp: %d\n",
+            printf("total weight: %f, time taken: %d, timestamp: ",
                    total_weight,
-                   pros::micros() - start_time,
-                   pros::millis());
+                   pros::micros() - start_time);
+            printf("%d\n",pros::millis());
+            printf("things done:%d,%d,%d\n",
+                   this->appliedMotionModel,
+                   this->weightedParticles,
+                   this->appliedResampling);
             printf("prediction:%f,%f,%f\n",
                    this->prediction.x.convert(in),
                    this->prediction.y.convert(in),
@@ -316,7 +339,7 @@ class ParticleFilter {
 
   public:
     // managed by the base motion model
-    ParticleFilter(PfMotionModel* motionModel, std::vector<Sensor*>&& sensors, PFConfiguration config)
+    ParticleFilter(BasePfMotionModel* motionModel, std::vector<Sensor*>&& sensors, PFConfiguration config)
         : motion_model(motionModel),
           PFConfig(config),
           sensors(std::move(sensors)) {
@@ -336,12 +359,19 @@ class ParticleFilter {
 
     void update() {
         start_time = pros::micros();
+        // set flags
+        appliedMotionModel = false;
+        weightedParticles = false;
+        appliedResampling = false;
 
+        // if no movement happened then globalPoseDelta will be all zeroes
         applyMotionModel();
 
         if (PFConfig.logging) printf("start generation\n");
 
+        if (PFConfig.logging) printf("start distances\n");
         updateSensors();
+        if (PFConfig.logging) printf("end distances\n");
 
         bool resampling = false;
 
@@ -361,11 +391,13 @@ class ParticleFilter {
             // there is nothing we can do in this iteration
             // instead we just update the prediction using the deltas from the
             // base motion model
-            auto globalPoseDelta = motion_model->getGlobalPoseDelta();
+
+            // if there hasn't been a new update then there is no point in updating the deltas as they will be old
+            globalPoseDelta = motion_model->getGlobalPoseDelta();
             updatePrediction(getPose().x + globalPoseDelta.x,
-                             getPose().y + globalPoseDelta.y,
-                             getPose().orientation +
-                               globalPoseDelta.orientation);
+                    getPose().y + globalPoseDelta.y,
+                    getPose().orientation +
+                    globalPoseDelta.orientation);
             endUpdate();
             return;
         }
@@ -380,9 +412,11 @@ class ParticleFilter {
             makeCloudAroundPrediction();
         }
 
+        // this might be bad performance wise
         checkOutOfFieldParticles();
 
         weightParticles();
+        weightedParticles = true;
 
         total_weight = 0;
 
@@ -432,7 +466,7 @@ class ParticleFilter {
                     printf("%.1f %.1f %.1f\n",
                            particles[i].x.convert(in),
                            particles[i].y.convert(in),
-                           weights[i]);
+                           weights[i] * 100);
                 }
             }
             printf("end particles\n");
@@ -446,18 +480,25 @@ class ParticleFilter {
         // base the near zero particle percentage only on non sensor
         // generated particles, as we would like to resample based on their
         // accuracy, not the generated sensor particles
-        for (size_t i = 0; i < N; i++) {
-            if (weights[i] < PFConfig.near_zero_epsilon) {
-                zero_particles++;
-            }
-        }
 
-        if (static_cast<float>(zero_particles) >
-            PFConfig.near_zero_particle_percentage * static_cast<float>(N)) {
+        // for (size_t i = 0; i < N; i++) {
+        //     if (weights[i] < PFConfig.near_zero_epsilon) {
+        //         zero_particles++;
+        //     }
+        // }
+        float ess = 0;
+
+        for (size_t i = 0; i < N; i++) {
+            ess += weights[i] * weights[i];
+        }
+        ess = 1/ess;
+
+        if (ess < PFConfig.near_zero_particle_percentage * static_cast<float>(N)) {
             resampling = true;
         }
 
         if (resampling) {
+            appliedResampling = true;
             resampleParticles();
         }
 
@@ -521,8 +562,6 @@ class ParticleFilter {
     }
 
     void init() {
-        motion_model->init();
-
         initUniform(-wall_length,
                     -wall_length,
                     wall_length,

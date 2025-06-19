@@ -9,10 +9,108 @@
 #include "vexmaps/odometry/odometry.hpp"
 #include "vexmaps/odometry/tracking_wheel.hpp"
 #include "vexmaps/particle_filter_model.hpp"
+#include <initializer_list>
 #include <memory>
+
+vexmaps::MotionModelConfig motion_model_config = {.forwards_noise = 0.04_in};
+vexmaps::PFConfiguration Pfconfig = { .logging = true, .particle_logging = true };
+
 
 // Inertial Sensor on port 8
 pros::Imu imu(13);
+
+using horizontalTrackers = std::initializer_list<vexmaps::HorizontalOdometryTracker*>;
+using verticalTrackers = std::initializer_list<vexmaps::VerticalOdometryTracker*>;
+
+pros::Controller master(pros::E_CONTROLLER_MASTER);
+
+pros::Motor frontLeft(-3,   pros::v5::MotorGears::blue,  pros::v5::MotorUnits::rotations); // left front motor. port 11, reversed
+pros::Motor middleLeft(10,  pros::v5::MotorGears::blue,  pros::v5::MotorUnits::rotations); // left middle motor. port 12, reversed
+pros::Motor backLeft(-2,    pros::v5::MotorGears::blue,  pros::v5::MotorUnits::rotations); // left back motor. port 13, reversed
+                                                                                           //
+pros::Motor frontRight(1,   pros::v5::MotorGears::blue,  pros::v5::MotorUnits::rotations); // right front motor. port 18
+pros::Motor middleRight(-9, pros::v5::MotorGears::blue,  pros::v5::MotorUnits::rotations); // right middle motor. port 19
+pros::Motor backRight(4,    pros::v5::MotorGears::blue,  pros::v5::MotorUnits::rotations); // right back motor. port 21
+                                                                                           //
+pros::Motor Intake(15,      pros::v5::MotorGears::blue,  pros::v5::MotorUnits::rotations); // intake motor. port 16, reversed
+
+pros::Motor Lift(18,        pros::v5::MotorGears::green, pros::v5::MotorUnits::rotations);
+pros::Motor Lift2(-19,      pros::v5::MotorGears::green, pros::v5::MotorUnits::rotations);
+
+pros::Distance mogo_sensor(4);
+
+pros::Optical optical_sensor(17);
+pros::adi::DigitalIn sensor('C');
+pros::adi::DigitalIn descoreLimit('A');
+
+pros::Distance left_sensor(6);
+pros::Distance back_sensor(5);
+pros::Distance right_sensor(16);
+pros::Distance front_sensor(20);
+
+// motor groups
+pros::MotorGroup leftMotors({frontLeft.get_port(), middleLeft.get_port(), backLeft.get_port()}); // left motor group
+pros::MotorGroup rightMotors({frontRight.get_port(), middleRight.get_port(), backRight.get_port()}); // right motor group
+pros::MotorGroup liftMotors({Lift.get_port(), Lift2.get_port()});
+
+// vertical tracking wheel in port 7, reversed direction
+pros::Rotation verticalEnc(-7);
+pros::Rotation horizontalEnc(-12);
+//horizontal tracking wheel. 2.75" diameter, 3.7" offset, back of the robot
+// hardware
+double dt_gear_ratio = (60.0 / 48.0);
+Length dt_diameter = 2.75_in;
+Length track_width = 10.5_in; // inches
+
+Length odom_wheel_diameter = 1.995_in; // inches
+
+vexmaps::MotorGroupTracking left_dt_tracker(&leftMotors,
+                                            dt_diameter,
+                                            dt_gear_ratio,
+                                            -(track_width) / 2);
+vexmaps::MotorGroupTracking right_dt_tracker(&rightMotors,
+                                             dt_diameter,
+                                             dt_gear_ratio,
+                                             (track_width) / 2);
+
+vexmaps::HorizontalOdometryTracker horizontal1(&horizontalEnc,
+                                               odom_wheel_diameter,
+                                               1,
+                                               // 1.125_in);
+                                               0.7_in);
+vexmaps::VerticalOdometryTracker vertical1(&verticalEnc,
+                                           odom_wheel_diameter,
+                                           1,
+                                           // 0.375_in);
+                                           // 0.4_in);
+                                           0.525_in);
+
+vexmaps::PfMotionModel<vexmaps::OdometryModel> pf_motion_model(
+        motion_model_config,
+        &left_dt_tracker,
+        &right_dt_tracker,
+        horizontalTrackers{&horizontal1},
+        verticalTrackers{&vertical1},
+        &imu);
+
+// sensors
+vexmaps::DistanceSensorModel<vexmaps::DistanceSensorConfiguration>
+  front_laser_model(&front_sensor, { 5.25_in, 5.4375_in, 0_stDeg }, "front");
+vexmaps::DistanceSensorModel<vexmaps::DistanceSensorConfiguration>
+  left_laser_model(&left_sensor, { 3_in, 5.25_in, 90_stDeg }, "left");
+vexmaps::DistanceSensorModel<vexmaps::DistanceSensorConfiguration>
+  back_laser_model(&back_sensor, { -4_in, -1.84375_in, 180_stDeg }, "back");
+vexmaps::DistanceSensorModel<vexmaps::DistanceSensorConfiguration>
+  right_laser_model(&right_sensor, { 4.25_in, -5.375_in, 270_stDeg }, "right");
+
+vexmaps::ParticleFilterModel<300> pf_model(
+  &pf_motion_model,
+  {
+  &front_laser_model,
+  &left_laser_model,
+  &back_laser_model,
+  &right_laser_model },
+  Pfconfig);
 
 /**
  * Runs initialization code. This occurs as soon as the program is started.
@@ -21,7 +119,7 @@ pros::Imu imu(13);
  * to keep execution time for this mode under a few seconds.
  */
 void initialize() {
-    printf("bruh\n");
+    // reset the imu
     imu.reset(true);
 }
 
@@ -70,114 +168,9 @@ void autonomous() {}
  * task, not resume it from where it left off.
  */
 void opcontrol() {
-    pros::Controller master(pros::E_CONTROLLER_MASTER);
-
-    pros::Motor frontLeft(-3,   pros::v5::MotorGears::blue,  pros::v5::MotorUnits::rotations); // left front motor. port 11, reversed
-    pros::Motor middleLeft(10,  pros::v5::MotorGears::blue,  pros::v5::MotorUnits::rotations); // left middle motor. port 12, reversed
-    pros::Motor backLeft(-2,    pros::v5::MotorGears::blue,  pros::v5::MotorUnits::rotations); // left back motor. port 13, reversed
-    pros::Motor frontRight(1,   pros::v5::MotorGears::blue,  pros::v5::MotorUnits::rotations); // right front motor. port 18
-    pros::Motor middleRight(-9, pros::v5::MotorGears::blue,  pros::v5::MotorUnits::rotations); // right middle motor. port 19
-    pros::Motor backRight(4,    pros::v5::MotorGears::blue,  pros::v5::MotorUnits::rotations); // right back motor. port 21
-    pros::Motor Intake(15,      pros::v5::MotorGears::blue,  pros::v5::MotorUnits::rotations); // intake motor. port 16, reversed
-    pros::Motor Lift(18,        pros::v5::MotorGears::green, pros::v5::MotorUnits::rotations); // second intake motor. port 14, reversed
-    pros::Motor Lift2(-19,      pros::v5::MotorGears::green, pros::v5::MotorUnits::rotations); // second intake motor. port 14, reversed
-
-    pros::Distance mogo_sensor(4);
-
-    pros::Optical optical_sensor(17);
-    pros::adi::DigitalIn sensor('C');
-    pros::adi::DigitalIn descoreLimit('A');
-
-    pros::Distance left_sensor(6);
-    pros::Distance back_sensor(6);
-    pros::Distance right_sensor(16);
-    pros::Distance front_sensor(20);
-    
-    // motor groups
-    pros::MotorGroup leftMotors({frontLeft.get_port(), middleLeft.get_port(), backLeft.get_port()}); // left motor group
-    pros::MotorGroup rightMotors({frontRight.get_port(), middleRight.get_port(), backRight.get_port()}); // right motor group
-    pros::MotorGroup liftMotors({Lift.get_port(), Lift2.get_port()});
-
-    //pros::MotorGroup Intake({Intake, Intake2}); // Intake motor group
-    
-    // vertical tracking wheel in port 7, reversed direction
-    pros::Rotation verticalEnc(-7);
-    pros::Rotation horizontalEnc(-12);
-    //horizontal tracking wheel. 2.75" diameter, 3.7" offset, back of the robot
-    //lemlib::TrackingWheel vertical(&verticalEnc, lemlib::Omniwheel::2, -1.5);
-    // lemlib::TrackingWheel vertical(&verticalEnc, 2, -0.375);
-    // lemlib::TrackingWheel horizontal(&horizontalEnc, 2, -1.125);
-    // hardware
-
-    double dt_gear_ratio = (48.0 / 48.0);
-    Length dt_diameter = 2.75_in;
-    Length track_width = 10_in; // inches
-
-    Length odom_wheel_diameter = 2.0_in; // inches
-                                         //
-    printf("good on hardware\n");
-
-    vexmaps::MotorGroupTracking left_dt_tracker(&leftMotors,
-                                                dt_diameter,
-                                                dt_gear_ratio,
-                                                -(track_width) / 2);
-    vexmaps::MotorGroupTracking right_dt_tracker(&rightMotors,
-                                                 dt_diameter,
-                                                 dt_gear_ratio,
-                                                 (track_width) / 2);
-
-    vexmaps::HorizontalOdometryTracker horizontal1(&horizontalEnc,
-                                                   odom_wheel_diameter,
-                                                   1,
-                                                   -1.125_in);
-    vexmaps::VerticalOdometryTracker vertical1(&verticalEnc,
-                                               odom_wheel_diameter,
-                                               1,
-                                               // -0.375_in);
-                                               -0.4_in);
-    printf("good on trackers\n");
-
-    std::unique_ptr<vexmaps::LocalizationModel> odometry_model =
-      std::make_unique<vexmaps::OdometryModel>(&left_dt_tracker,
-                                               &right_dt_tracker,
-                                               std::vector { &horizontal1 },
-                                               std::vector { &vertical1 },
-                                               &imu);
-
-
-    vexmaps::MotionModelConfig motion_model_config;
-    printf("good on odom\n");
-
-    // make the PF motion model wrapper
-    vexmaps::PfMotionModel pf_motion_model(odometry_model, motion_model_config);
-
-    printf("good on pf model\n");
-    // sensors
-    vexmaps::DistanceSensorModel<vexmaps::DistanceSensorConfiguration>
-      laser_model1(&front_sensor, { 0_m, 0_m, 0_stDeg }, "front");
-    vexmaps::DistanceSensorModel<vexmaps::DistanceSensorConfiguration>
-      laser_model3(&left_sensor, { 0_m, 0_m, 90_stDeg }, "left");
-    vexmaps::DistanceSensorModel<vexmaps::DistanceSensorConfiguration>
-      laser_model2(&back_sensor, { 0_m, 0_m, 180_stDeg }, "back");
-    vexmaps::DistanceSensorModel<vexmaps::DistanceSensorConfiguration>
-      laser_model4(&right_sensor, { 0_m, 0_m, 270_stDeg }, "right");
-
-    printf("good on distances\n");
-
-    vexmaps::PFConfiguration Pfconfig;
-    Pfconfig.logging = false;
-
-    vexmaps::ParticleFilterModel<2000> pf_model(
-      &pf_motion_model,
-      { &laser_model1, &laser_model2, &laser_model3, &laser_model4 },
-      Pfconfig);
-
-    printf("good on pf\n");
-
+    // initialize both models
+    pf_motion_model.init();
     pf_model.init();
-    printf("good on pf.init\n");
-    
-    // pf_motion_model.init();
 
     // create the odom task
     pros::Task odom_task{[&] {
@@ -187,8 +180,6 @@ void opcontrol() {
             pros::c::task_delay_until(&current_time, to_msec(pf_motion_model.getTaskDeltaTime()));
         }
     }};
-    printf("good on odom task\n");
-
     pros::Task pf_task{[&] {
         while(true){
             uint32_t current_time = pros::millis();
@@ -196,16 +187,22 @@ void opcontrol() {
             pros::c::task_delay_until(&current_time, to_msec(pf_model.getTaskDeltaTime()));
         }
     }};
-    // create a task to automatically update the particle filter
-    // pros::Task pf_task = createLocalizationTask(&pf_model);
-    printf("good on pf task\n");
 
-    imu.set_heading(0);
-    pf_motion_model.setPose({0_in,0_in,0_stRad});
-
-    pf_motion_model.getPose();
+    // set the pose
+    pf_model.setPose({48_in,-48_in,0_stDeg});
 
     while (true) {
+        // printf(" start generation\n start distances\n front:18.7795,50,0.03175,false,25\n back:37.9528,63,0.03175,false,105\n left:37.9528,63,0.03175,false,105\n right:393.661,0,0.03175,true,-1\n end distances\n start particles\n end particles\n total weight: 1491.866211, time taken: 4928, timestamp: 0\n things done:1,1,0\n prediction:%f,%f,%f\n end generation\n",
+        //         pf_model.getPose().x.convert(in),
+        //         pf_model.getPose().y.convert(in),
+        //         pf_model.getPose().orientation.convert(deg)
+        //         );
+        // printf("start generation\nstart distances\nend distances\nstart particles\nend particles\ntotal weight: 0, time taken: 0, timestamp: 0\nthings done:1,1,0\nprediction:%f,%f,%f\nend generation\n",
+        //         pf_motion_model->getPose().x.convert(in),
+        //         pf_motion_model->getPose().y.convert(in),
+        //         pf_motion_model->getPose().orientation.convert(deg)
+        //         );
+
         // printf("pose: %f, %f, %f\n",
         //         pf_motion_model.getPose().x.convert(in),
         //         pf_motion_model.getPose().y.convert(in),
@@ -216,20 +213,14 @@ void opcontrol() {
         //         pf_model.getPose().y.convert(in),
         //         pf_model.getPose().orientation.convert(deg)
         //         );
-        // pros::lcd::print(0,
-        //                  "%d %d %d",
-        //                  (pros::lcd::read_buttons() & LCD_BTN_LEFT) >> 2,
-        //                  (pros::lcd::read_buttons() & LCD_BTN_CENTER) >> 1,
-        //                  (pros::lcd::read_buttons() & LCD_BTN_RIGHT) >>
-        //                    0); // Prints status of the emulated screen LCDs
         //
         // // Arcade control scheme
         int dir = master.get_analog(
           ANALOG_LEFT_Y); // Gets amount forward/backward from left joystick
         int turn = master.get_analog(
           ANALOG_RIGHT_X); // Gets the turn left/right from right joystick
-        leftMotors.move(dir - turn); // Sets left motor voltage
-        rightMotors.move(dir + turn); // Sets right motor voltage
-        pros::delay(10); // Run for 20 ms then update
+        leftMotors.move(dir + turn); // Sets left motor voltage
+        rightMotors.move(dir - turn); // Sets right motor voltage
+        pros::delay(20); // Run for 20 ms then update
     }
 }

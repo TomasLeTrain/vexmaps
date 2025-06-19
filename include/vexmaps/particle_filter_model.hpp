@@ -23,7 +23,7 @@ class ParticleFilterModel : public LocalizationModel {
     units::Pose local_delta;
 
   public:
-    ParticleFilterModel(PfMotionModel* motion_model,
+    ParticleFilterModel(BasePfMotionModel* motion_model,
                         std::vector<Sensor*>&& sensors,
                         PFConfiguration config)
         : particle_filter(motion_model, std::move(sensors), config) {}

@@ -37,7 +37,7 @@ struct PFConfiguration {
     float near_zero_epsilon = 0.8;
 
     // percentage of particles which have weights near zero to resample
-    float near_zero_particle_percentage = 0.5;
+    float near_zero_particle_percentage = 0.7;
 
     Length cloud_distribution_bounds = 2_in;
 };
@@ -84,11 +84,12 @@ struct DistanceSensorConfiguration {
     static constexpr double std_deviation = 0.03175; // 1.25 inches
 
     // the final distribution should integrates to 1
-    static constexpr double randomCoeff = 0.189;
-    static constexpr double expCoeff = 0.618;
-    static constexpr double normalCoeff = 0.194;
+    static constexpr double randomCoeff = 0.415;
+    static constexpr double expCoeff = 0.18;
+    static constexpr double normalCoeff = 0.386;
 
-    static constexpr bool logging = false;
+    static constexpr bool logging = true;
+// the final distribution should integrates to 1
 };
 
 } // namespace vexmaps
