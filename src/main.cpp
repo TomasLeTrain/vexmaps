@@ -1,8 +1,6 @@
 #include "main.h"
 #include "pros/abstract_motor.hpp"
-#include "pros/motors.h"
 #include "units/units.hpp"
-#include "vexmaps/localization_model.hpp"
 #include "vexmaps/mcl/config.hpp"
 #include "vexmaps/mcl/distance_model.hpp"
 #include "vexmaps/mcl/pf_motion_model.hpp"
@@ -10,7 +8,6 @@
 #include "vexmaps/odometry/tracking_wheel.hpp"
 #include "vexmaps/particle_filter_model.hpp"
 #include <initializer_list>
-#include <memory>
 
 vexmaps::MotionModelConfig motion_model_config = { .forwards_noise = 0.04_in };
 vexmaps::PFConfiguration Pfconfig = { .logging = true, .particle_logging = true };

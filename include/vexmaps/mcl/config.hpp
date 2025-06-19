@@ -40,6 +40,9 @@ struct PFConfiguration {
     float near_zero_particle_percentage = 0.6;
 
     Length cloud_distribution_bounds = 2_in;
+    
+    // should be at most half the width of the robot
+    Length wall_border_width = 4_in;
 };
 
 struct MotionModelConfig {

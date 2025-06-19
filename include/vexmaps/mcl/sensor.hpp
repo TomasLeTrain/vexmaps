@@ -12,7 +12,8 @@ class Sensor {
     virtual bool hasAvailableReading() = 0;
 
     virtual inline float evaluate(const Point& point) = 0;
-    virtual inline float32x4_t Vevaluate(float32x4x2_t point) = 0;
+    virtual inline float evaluate(Length x,Length y) = 0;
+    virtual inline float32x4_t Vevaluate(float32x4_t x,float32x4_t y) = 0;
 
     virtual void disable() = 0;
     virtual void enable() = 0;

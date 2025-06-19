@@ -174,12 +174,24 @@ class DistanceSensorModel : public Sensor {
         // clang-format on
     }
 
+    inline float evaluate(Length x, Length y) override {
+        const Length mod_difference =
+          units::min(hor_wall_coeff - x * x_coeff,
+                     ver_wall_coeff - y * y_coeff);
+
+        // clang-format off
+        return
+            constantFactor +
+            NormalDistributionApproximation<static_cast<double>(normalFactor)>(mod_difference.internal());
+        // clang-format on
+    }
+
     // TODO: see if this could be abstracted from the class, allowing multiple
     // sensors to be evaluated at once as there are enough registers for that
     //
     // assumes that its only getting called if exit is false
     // this assumption saves some conditionals improving performance
-    inline float32x4_t Vevaluate(float32x4x2_t point) override {
+    inline float32x4_t Vevaluate(float32x4_t x, float32x4_t y) override {
         // clang-format off
         //
         // expected_distance =
@@ -224,8 +236,8 @@ class DistanceSensorModel : public Sensor {
 
         // HC = hor_wall_coeff - point.x * (secant * r_std_dev)
         // VC = ver_wall_coeff - point.y * (cosecant * r_std_dev)
-        HC = vmlsq_n_f32(HC, point.val[0], x_coeff);
-        VC = vmlsq_n_f32(VC, point.val[1], y_coeff);
+        HC = vmlsq_n_f32(HC, x, x_coeff);
+        VC = vmlsq_n_f32(VC, y, y_coeff);
 
         // difference = min(HC,VC)
         float32x4_t mod_difference = vminq_f32(HC, VC);

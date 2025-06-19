@@ -18,14 +18,15 @@ class ParticleFilter {
     // used for vectorization
     static constexpr size_t remaining_particles = (N - (N % 4));
 
-    Point particles[N];
+    Length x[N];
+    Length y[N];
     float weights[N];
 
     std::vector<Sensor*> sensors;
 
     BasePfMotionModel* motion_model;
     PFConfiguration PFConfig;
-    
+
     // global pose delta from the base motion model
     units::Pose globalPoseDelta;
 
@@ -59,6 +60,8 @@ class ParticleFilter {
      */
     const float average_weight = sum_factor / N;
 
+    Length bordered_wall_length;
+
     // the sum of the particles before normalization
     float total_weight = 0;
 
@@ -73,7 +76,7 @@ class ParticleFilter {
     // -- functions called in update -- //
 
     void applyMotionModel() {
-        globalPoseDelta = units::Pose(0_m,0_m,0_stDeg);
+        globalPoseDelta = units::Pose(0_m, 0_m, 0_stDeg);
         // only applies motion updates if there are new available deltas
         auto current_timestamp = motion_model->getLatestUpdateTimestamp();
         auto current_global_delta = motion_model->getGlobalPoseDelta();
@@ -94,20 +97,26 @@ class ParticleFilter {
                 motion_model->VnoisyGlobalDelta(&motionDataX, &motionDataY);
                 // points need to be located in memory like so
                 // [x][y][x][y]...
-                float32x4x2_t data = vld2q_f32((float*)&particles[i]);
+                float32x4_t Vx = vld1q_f32((float*)&x[i]);
+                float32x4_t Vy = vld1q_f32((float*)&y[i]);
 
-                data.val[0] = vaddq_f32(data.val[0], motionDataX);
-                data.val[1] = vaddq_f32(data.val[1], motionDataY);
+                Vx = vaddq_f32(Vx, motionDataX);
+                Vy = vaddq_f32(Vy, motionDataY);
 
-                vst2q_f32((float*)&particles[i], data);
+                vst1q_f32((float*)&x[i], Vx);
+                vst1q_f32((float*)&y[i], Vy);
             }
             // proccess remaining
             for (size_t i = remaining_particles; i < N; i++) {
-                particles[i] += motion_model->noisyGlobalDelta();
+                Point noisy_global_delta = motion_model->noisyGlobalDelta();
+                x[i] += noisy_global_delta.x;
+                y[i] += noisy_global_delta.y;
             }
         } else {
             for (size_t i = 0; i < N; i++) {
-                particles[i] += motion_model->noisyGlobalDelta();
+                Point noisy_global_delta = motion_model->noisyGlobalDelta();
+                x[i] += noisy_global_delta.x;
+                y[i] += noisy_global_delta.y;
             }
         }
     }
@@ -119,32 +128,30 @@ class ParticleFilter {
         }
     }
 
-    inline static bool outOfField(const Point& point) {
-        return point.x > wall_length || point.x < -wall_length ||
-               point.y < -wall_length || point.y > wall_length;
+    inline bool outOfField(const size_t i) {
+        return x[i] > bordered_wall_length || y[i] > bordered_wall_length ||
+               x[i] < -bordered_wall_length || y[i] < -bordered_wall_length;
     }
 
     void checkOutOfFieldParticles() {
         for (size_t i = 0; i < N; i++) {
             // places the particle randomly on the field if its out of the field
-            if (outOfField(particles[i])) {
+            if (outOfField(i)) {
                 // useful if the robot is ramming into a wall, as that will stop
                 // them from going off the map while also not leaving the
                 // current robot's spot
-                particles[i] = {
-                    units::clamp(particles[i].x,
-                                 -(wall_length - 3.5_in),
-                                 (wall_length - 3.5_in)),
-                    units::clamp(particles[i].y,
-                                 -(wall_length - 3.5_in),
-                                 (wall_length - 3.5_in)),
-                };
+                x[i] = units::clamp(x[i],
+                                    -bordered_wall_length,
+                                    bordered_wall_length);
+                y[i] = units::clamp(y[i],
+                                    -bordered_wall_length,
+                                    bordered_wall_length);
             }
         }
     }
 
     void weightParticles() {
-        // TODO: see if this is vectorized (likely)
+        // Likely vectorized
         for (size_t i = 0; i < N; i++) {
             weights[i] = 1.0;
         }
@@ -154,10 +161,11 @@ class ParticleFilter {
                 // we assume the weights are valid (not infinity)
                 if (sensor->getVectorized()) {
                     for (size_t i = 0; i < remaining_particles; i += 4) {
-                        float32x4x2_t points = vld2q_f32((float*)&particles[i]);
+                        float32x4_t Vx = vld1q_f32((float*)&x[i]);
+                        float32x4_t Vy = vld1q_f32((float*)&y[i]);
                         float32x4_t current_weights = vld1q_f32(&weights[i]);
 
-                        float32x4_t sensor_weights = sensor->Vevaluate(points);
+                        float32x4_t sensor_weights = sensor->Vevaluate(Vx, Vy);
 
                         current_weights =
                           vmulq_f32(current_weights, sensor_weights);
@@ -168,7 +176,7 @@ class ParticleFilter {
                     // process remaining particles (if any)
                     for (size_t i = remaining_particles; i < N; i++) {
                         const float sensor_weight =
-                          sensor->evaluate(particles[i]);
+                          sensor->evaluate(x[i], y[i]);
 
                         if (std::isfinite(sensor_weight)) {
                             weights[i] *= sensor_weight;
@@ -177,7 +185,7 @@ class ParticleFilter {
                 } else {
                     for (size_t i = 0; i < N; i++) {
                         const float sensor_weight =
-                          sensor->evaluate(particles[i]);
+                          sensor->evaluate(x[i], y[i]);
 
                         if (std::isfinite(sensor_weight)) {
                             weights[i] *= sensor_weight;
@@ -194,8 +202,8 @@ class ParticleFilter {
         float weighted_y_sum = 0.0;
 
         // for (size_t i = 0; i < N; i++) {
-        //     weighted_x_sum += particles[i].x.internal() * weights[i];
-        //     weighted_y_sum += particles[i].y.internal() * weights[i];
+        //     weighted_x_sum += x[i].internal() * weights[i];
+        //     weighted_y_sum += y[i].internal() * weights[i];
         // }
 
         if (PFConfig.usingVectorizedMotion) {
@@ -203,19 +211,21 @@ class ParticleFilter {
             float32x4_t Vweighted_y_sum = vdupq_n_f32(0.0);
 
             for (size_t i = 0; i < remaining_particles; i += 4) {
-                float32x4x2_t points = vld2q_f32((float*)&particles[i]);
+                float32x4_t Vx = vld1q_f32((float*)&x[i]);
+                float32x4_t Vy = vld1q_f32((float*)&y[i]);
                 float32x4_t current_weights = vld1q_f32(&weights[i]);
 
                 Vweighted_x_sum =
-                  vmlaq_f32(Vweighted_x_sum, points.val[0], current_weights);
+                  vmlaq_f32(Vweighted_x_sum, Vx, current_weights);
                 Vweighted_y_sum =
-                  vmlaq_f32(Vweighted_y_sum, points.val[1], current_weights);
+                  vmlaq_f32(Vweighted_y_sum, Vy, current_weights);
             }
 
             for (size_t i = remaining_particles; i < N; i++) {
-                weighted_x_sum += particles[i].x.internal() * weights[i];
-                weighted_x_sum += particles[i].y.internal() * weights[i];
+                weighted_x_sum += x[i].internal() * weights[i];
+                weighted_x_sum += y[i].internal() * weights[i];
             }
+
             weighted_x_sum += vgetq_lane_f32(Vweighted_x_sum, 0) +
                               vgetq_lane_f32(Vweighted_x_sum, 1) +
                               vgetq_lane_f32(Vweighted_x_sum, 2) +
@@ -227,8 +237,8 @@ class ParticleFilter {
                               vgetq_lane_f32(Vweighted_y_sum, 3);
         } else {
             for (size_t i = 0; i < N; i++) {
-                weighted_x_sum += particles[i].x.internal() * weights[i];
-                weighted_x_sum += particles[i].y.internal() * weights[i];
+                weighted_x_sum += x[i].internal() * weights[i];
+                weighted_x_sum += y[i].internal() * weights[i];
             }
         }
 
@@ -249,7 +259,8 @@ class ParticleFilter {
             // this might be impossible since the wall being detected (and
             // therefore the axis) can change between particles
             //
-            // we always need to update the prediction even if not based on particles
+            // we always need to update the prediction even if not based on
+            // particles
             updatePrediction(getPose().x + globalPoseDelta.x,
                              getPose().y + globalPoseDelta.y,
                              getPose().orientation +
@@ -277,8 +288,8 @@ class ParticleFilter {
                 weight_sum = weight_sum + weights[I];
             }
 
-            particles[i].x = particles[I].x;
-            particles[i].y = particles[I].y;
+            x[i] = x[I];
+            y[i] = y[I];
 
             // sets weight to average value
             weights[i] = average_weight;
@@ -298,9 +309,9 @@ class ParticleFilter {
         for (size_t i = 0; i < N; i++) {
             // here we can use slow rng since we expect to call this only a few
             // times
-            particles[i].x =
+            x[i] =
               prediction.x + cloud_dist(rng) * m * lost_iteration_multiplier;
-            particles[i].y =
+            y[i] =
               prediction.y + cloud_dist(rng) * m * lost_iteration_multiplier;
         }
         for (size_t i = 0; i < N; i++) {
@@ -313,7 +324,7 @@ class ParticleFilter {
             printf("total weight: %f, time taken: %d, timestamp: ",
                    total_weight,
                    pros::micros() - start_time);
-            printf("%d\n",pros::millis());
+            printf("%d\n", pros::millis());
             printf("things done:%d,%d,%d\n",
                    this->appliedMotionModel,
                    this->weightedParticles,
@@ -334,14 +345,13 @@ class ParticleFilter {
 
   public:
     // managed by the base motion model
-    ParticleFilter(BasePfMotionModel* motionModel, std::vector<Sensor*>&& sensors, PFConfiguration config)
+    ParticleFilter(BasePfMotionModel* motionModel,
+                   std::vector<Sensor*>&& sensors,
+                   PFConfiguration config)
         : motion_model(motionModel),
           PFConfig(config),
           sensors(std::move(sensors)) {
-        for (size_t i = 0; i < N; i++) {
-            particles[i] = { 0.0_m, 0.0_m };
-            weights[i] = average_weight;
-        }
+        bordered_wall_length = wall_length - (PFConfig.wall_border_width);
     }
 
     void addSensor(Sensor* sensor) {
@@ -387,18 +397,19 @@ class ParticleFilter {
             // instead we just update the prediction using the deltas from the
             // base motion model
 
-            // if there hasn't been a new update then there is no point in updating the deltas as they will be old
+            // if there hasn't been a new update then there is no point in
+            // updating the deltas as they will be old
             globalPoseDelta = motion_model->getGlobalPoseDelta();
             updatePrediction(getPose().x + globalPoseDelta.x,
-                    getPose().y + globalPoseDelta.y,
-                    getPose().orientation +
-                    globalPoseDelta.orientation);
+                             getPose().y + globalPoseDelta.y,
+                             getPose().orientation +
+                               globalPoseDelta.orientation);
             endUpdate();
             return;
         }
         // all routines from here on assume at least one sensor has a reading
 
-        if (active_sensors >= 2 && lost_iteration_count >= 5) {
+        if (lost_iteration_count >= 5) {
             // to recover the system we distribute particles around the
             // prediction to clamp to the actual position we only perform this
             // if we have enough data to determine the new position and if we
@@ -449,7 +460,7 @@ class ParticleFilter {
         const float normalization_factor = sum_factor / total_weight;
 
         // normalizes weights to add up to sum_factor
-        // TODO: check for vectorization (most likely is)
+        // most likely vectorized
         for (size_t i = 0; i < N; i++) {
             weights[i] *= normalization_factor;
         }
@@ -459,8 +470,8 @@ class ParticleFilter {
             if (PFConfig.particle_logging) {
                 for (size_t i = 0; i < N; i++) {
                     printf("%.1f %.1f %.1f\n",
-                           particles[i].x.convert(in),
-                           particles[i].y.convert(in),
+                           x[i].convert(in),
+                           y[i].convert(in),
                            weights[i] * 100);
                 }
             }
@@ -474,13 +485,32 @@ class ParticleFilter {
         // effective_sample_size = sum(w[i]) / sum (w[i]^2) -> 1 / sum (w[i]^2)
         float ess = 0;
 
-        for (size_t i = 0; i < N; i++) {
-            ess += weights[i] * weights[i];
+        if (PFConfig.usingVectorizedMotion) {
+            float32x4_t Vess = vdupq_n_f32(0.0);
+
+            for (size_t i = 0; i < remaining_particles; i += 4) {
+                float32x4_t Vweights = vld1q_f32(&weights[i]);
+
+                Vess = vmlaq_f32(Vess, Vweights, Vweights);
+            }
+
+            for (size_t i = remaining_particles; i < N; i++) {
+                ess += weights[i] * weights[i];
+            }
+
+            ess += vgetq_lane_f32(Vess, 0) + vgetq_lane_f32(Vess, 1) +
+                   vgetq_lane_f32(Vess, 2) + vgetq_lane_f32(Vess, 3);
+
+        } else {
+            for (size_t i = 0; i < N; i++) {
+                ess += weights[i] * weights[i];
+            }
         }
-        
+
         ess = sum_factor / ess;
 
-        if (ess < PFConfig.near_zero_particle_percentage * static_cast<float>(N)) {
+        if (ess <
+            PFConfig.near_zero_particle_percentage * static_cast<float>(N)) {
             resampling = true;
         }
 
@@ -507,15 +537,14 @@ class ParticleFilter {
      * particle_filter.init_normal_around_point(start_point, 5_in);
      * @endcod
      */
-    void initNormal(const units::Pose pose,
-                                  const Length std_deviation) {
+    void initNormal(const units::Pose pose, const Length std_deviation) {
         std::normal_distribution x_dist(pose.x.internal(),
                                         std_deviation.internal());
         std::normal_distribution y_dist(pose.y.internal(),
                                         std_deviation.internal());
         for (size_t i = 0; i < N; i++) {
-            particles[i].x = x_dist(rng) * m;
-            particles[i].y = y_dist(rng) * m;
+            x[i] = x_dist(rng) * m;
+            y[i] = y_dist(rng) * m;
         }
         for (size_t i = 0; i < N; i++) {
             weights[i] = average_weight;
@@ -535,8 +564,8 @@ class ParticleFilter {
                                               max_y.internal());
 
         for (size_t i = 0; i < N; i++) {
-            particles[i].x = x_dist(rng) * m;
-            particles[i].y = y_dist(rng) * m;
+            x[i] = x_dist(rng) * m;
+            y[i] = y_dist(rng) * m;
         }
         for (size_t i = 0; i < N; i++) {
             weights[i] = average_weight;
@@ -549,6 +578,12 @@ class ParticleFilter {
     }
 
     void init() {
+        for (size_t i = 0; i < N; i++) {
+            x[i] = 0.0_m;
+            y[i] = 0.0_m;
+            weights[i] = average_weight;
+        }
+
         initUniform(-wall_length,
                     -wall_length,
                     wall_length,
