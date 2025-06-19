@@ -33,11 +33,6 @@ class ParticleFilter {
     std::uniform_real_distribution<float> field_dist { -wall_length.internal(),
                                                        wall_length.internal() };
 
-    std::uniform_real_distribution<float> cloud_dist {
-        -PFConfig.cloud_distribution_bounds.internal(),
-        PFConfig.cloud_distribution_bounds.internal()
-    };
-
     uint64_t start_time;
 
     units::Pose prediction;
@@ -64,6 +59,7 @@ class ParticleFilter {
 
     // the sum of the particles before normalization
     float total_weight = 0;
+    float max_weight = 0;
 
     // holds if none of the sensors detect values
     // useful for determining how to handle weights when there is no current
@@ -95,8 +91,6 @@ class ParticleFilter {
             for (size_t i = 0; i < remaining_particles; i += 4) {
                 float32x4_t motionDataX, motionDataY;
                 motion_model->VnoisyGlobalDelta(&motionDataX, &motionDataY);
-                // points need to be located in memory like so
-                // [x][y][x][y]...
                 float32x4_t Vx = vld1q_f32((float*)&x[i]);
                 float32x4_t Vy = vld1q_f32((float*)&y[i]);
 
@@ -134,6 +128,7 @@ class ParticleFilter {
     }
 
     void checkOutOfFieldParticles() {
+        // TODO: check/fix performance
         for (size_t i = 0; i < N; i++) {
             // places the particle randomly on the field if its out of the field
             if (outOfField(i)) {
@@ -296,29 +291,6 @@ class ParticleFilter {
         }
     }
 
-    // used for recovering the system when all the particles are not close to
-    // correct
-    void makeCloudAroundPrediction() {
-        // considers the number of iterations its been lost
-        // the larger it is the larger the cloud becomes
-        const float lost_literation_factor = 0.25;
-        const float lost_iteration_multiplier =
-          1 +
-          lost_literation_factor * static_cast<float>(lost_iteration_count - 5);
-
-        for (size_t i = 0; i < N; i++) {
-            // here we can use slow rng since we expect to call this only a few
-            // times
-            x[i] =
-              prediction.x + cloud_dist(rng) * m * lost_iteration_multiplier;
-            y[i] =
-              prediction.y + cloud_dist(rng) * m * lost_iteration_multiplier;
-        }
-        for (size_t i = 0; i < N; i++) {
-            weights[i] = average_weight;
-        }
-    }
-
     void endUpdate() {
         if (PFConfig.logging) {
             printf("total weight: %f, time taken: %d, timestamp: ",
@@ -378,8 +350,6 @@ class ParticleFilter {
         updateSensors();
         if (PFConfig.logging) printf("end distances\n");
 
-        bool resampling = false;
-
         // active if any of the sensors have a reading
         no_active_sensors = true;
         // number of sensors with a reading
@@ -397,9 +367,8 @@ class ParticleFilter {
             // instead we just update the prediction using the deltas from the
             // base motion model
 
-            // if there hasn't been a new update then there is no point in
-            // updating the deltas as they will be old
-            globalPoseDelta = motion_model->getGlobalPoseDelta();
+            // if there is no update deltas since last time globalPoseDelta will
+            // be zero so it won't matter
             updatePrediction(getPose().x + globalPoseDelta.x,
                              getPose().y + globalPoseDelta.y,
                              getPose().orientation +
@@ -407,34 +376,31 @@ class ParticleFilter {
             endUpdate();
             return;
         }
+
         // all routines from here on assume at least one sensor has a reading
 
-        if (lost_iteration_count >= 5) {
-            // to recover the system we distribute particles around the
-            // prediction to clamp to the actual position we only perform this
-            // if we have enough data to determine the new position and if we
-            // have been lost for multiple iterations (to avoid clamping because
-            // of innacurate readings)
-            makeCloudAroundPrediction();
-        }
-
-        // this might be bad performance wise
         checkOutOfFieldParticles();
 
         weightParticles();
         weightedParticles = true;
 
         total_weight = 0;
+        max_weight = 0;
 
-        // update total_weight
-        // TODO: check for vectorization (most likely is)
+        // likely vectorized
         for (size_t i = 0; i < N; i++) {
             total_weight += weights[i];
         }
 
-        // only check for lost iterations if we have at least two distance
-        // sensors
-        // TODO: come up with a better metric for the accuracy of particles
+        // should be pretty fast because of hard abi
+        for (size_t i = 0; i < N; i++) {
+            max_weight = fmaxf(max_weight, weights[i]);
+        }
+
+        // TODO: this might not be the best metric since it might depend on how
+        // many sensor there are and their pdf. it would be better to have a
+        // metric for how good the best guesses are
+        // Maybe using max_weight instead could be better
         if (active_sensors >= 2) {
             if (total_weight <= PFConfig.low_weight_sum_threshold) {
                 // none of the particles are likely at all, meaning we have no
@@ -453,6 +419,7 @@ class ParticleFilter {
                 lost_iteration_count = 0;
             }
         }
+        motion_model->updateLostIterationCount(lost_iteration_count);
 
         // this would allow us to change normalization to make the particles sum
         // to a different number this could affect how much previous weights /
@@ -508,6 +475,8 @@ class ParticleFilter {
         }
 
         ess = sum_factor / ess;
+
+        bool resampling = false;
 
         if (ess <
             PFConfig.near_zero_particle_percentage * static_cast<float>(N)) {

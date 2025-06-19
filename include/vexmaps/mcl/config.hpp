@@ -46,7 +46,7 @@ struct PFConfiguration {
 };
 
 struct MotionModelConfig {
-    Length forwards_noise = 0.02_in;
+    Length forwards_noise = 0.05_in;
 
     // relates slip to change in distance
     // higher distance travel usually results in wheel slipage, therefore we use
@@ -79,6 +79,12 @@ struct MotionModelConfig {
     // instead this one relates the angle change in movement vertically
     // this also accounts for the drastical drift that happens on angle changes
     Divided<Length, Angle> angle_to_forwards_noise = 0.01_in / 30_stDeg;
+
+    // relates number of lost iterations to additional noise in the system
+    // set to zero to disable lost iterations from applying at all
+    Length lost_iter_to_forwards_noise = 0.01_in;
+    Length lost_iter_to_drift_noise = 0.01_in;
+    Angle lost_iter_to_angle_noise = 1_stDeg;
 } ;
 
 struct DistanceSensorConfiguration {

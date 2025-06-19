@@ -30,6 +30,7 @@ class BasePfMotionModel : public LocalizationModel {
     virtual inline void VnoisyGlobalDelta(float32x4_t* Xresult,
                                           float32x4_t* Yresult) = 0;
     virtual Point noisyGlobalDelta() = 0;
+    virtual void updateLostIterationCount(int new_count) = 0;
 };
 
 /**
@@ -55,10 +56,6 @@ class PfMotionModel : public BasePfMotionModel {
     float drift_b = 0;
     float drift_k = 0;
 
-    // Vuniform_float32_t Vaverage_distance_distribution;
-    // Vuniform_float32_t Vangle_distribution;
-    // Vuniform_float32_t Vdrift_distribution;
-
     Time update_timestamp = 0_sec;
 
     Angle abs_delta_theta = 0_stDeg;
@@ -67,6 +64,8 @@ class PfMotionModel : public BasePfMotionModel {
     float sina, cosa;
 
     float global_pose_delta_x, global_pose_delta_y;
+
+    float lost_iteration_count = 0;
 
     units::Pose last_pose = { INFINITY * m, INFINITY* m, INFINITY* rad },
                 global_pose_delta;
@@ -144,14 +143,17 @@ class PfMotionModel : public BasePfMotionModel {
 
         const Length distance_noise =
           motionModelConfig.forwards_noise +
-          motionModelConfig.angle_to_forwards_noise * abs_delta_theta;
+          motionModelConfig.angle_to_forwards_noise * abs_delta_theta +
+          motionModelConfig.lost_iter_to_forwards_noise * lost_iteration_count;
 
         const Angle angle_noise =
-          abs_delta_theta * motionModelConfig.angle_noise;
+          abs_delta_theta * motionModelConfig.angle_noise +
+          motionModelConfig.lost_iter_to_angle_noise * lost_iteration_count;
 
         const Length drift_noise =
           motionModelConfig.drift_noise +
-          motionModelConfig.angle_to_drift_noise * abs_delta_theta;
+          motionModelConfig.angle_to_drift_noise * abs_delta_theta +
+          motionModelConfig.lost_iter_to_drift_noise * lost_iteration_count;
 
         average_distance_distribution =
           std::uniform_real_distribution<float>((-distance_noise).internal(),
@@ -176,19 +178,6 @@ class PfMotionModel : public BasePfMotionModel {
         drift_a = (-drift_noise).internal();
         drift_b = (+drift_noise).internal();
         drift_k = (drift_b - drift_a) / static_cast<float>(UINT32_MAX);
-
-        //
-        // vector-related
-        // Vaverage_distance_distribution =
-        //   Vuniform_float32_t((-distance_noise).internal(),
-        //                      (+distance_noise).internal(),
-        //                      robot_rng());
-        // Vangle_distribution = Vuniform_float32_t((-angle_noise).internal(),
-        //                                          (+angle_noise).internal(),
-        //                                          robot_rng());
-        // Vdrift_distribution = Vuniform_float32_t((-drift_noise).internal(),
-        //                                          (+drift_noise).internal(),
-        //                                          robot_rng());
 
         global_pose_delta_x = global_pose_delta.x.internal();
         global_pose_delta_y = global_pose_delta.y.internal();
@@ -252,6 +241,9 @@ class PfMotionModel : public BasePfMotionModel {
                    horizontal_noise * new_sina,
                  global_pose_delta.y + vertical_noise * new_sina +
                    horizontal_noise * new_cosa };
+    }
+    void updateLostIterationCount(int new_count) override {
+        lost_iteration_count = static_cast<float>(new_count);
     }
 };
 } // namespace vexmaps
