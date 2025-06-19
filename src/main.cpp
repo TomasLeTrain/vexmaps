@@ -1,5 +1,6 @@
 #include "main.h"
 #include "pros/abstract_motor.hpp"
+#include "pros/misc.h"
 #include "units/units.hpp"
 #include "vexmaps/mcl/config.hpp"
 #include "vexmaps/mcl/distance_model.hpp"
@@ -7,6 +8,7 @@
 #include "vexmaps/odometry/odometry.hpp"
 #include "vexmaps/odometry/tracking_wheel.hpp"
 #include "vexmaps/particle_filter_model.hpp"
+#include "pros/apix.h"
 #include <initializer_list>
 
 vexmaps::MotionModelConfig motion_model_config = { .forwards_noise = 0.04_in };
@@ -53,8 +55,7 @@ pros::MotorGroup liftMotors({Lift.get_port(), Lift2.get_port()});
 // vertical tracking wheel in port 7, reversed direction
 pros::Rotation verticalEnc(-7);
 pros::Rotation horizontalEnc(-12);
-//horizontal tracking wheel. 2.75" diameter, 3.7" offset, back of the robot
-// hardware
+
 double dt_gear_ratio = (60.0 / 48.0);
 Length dt_diameter = 2.75_in;
 Length track_width = 10.5_in; // inches
@@ -90,7 +91,6 @@ vexmaps::PfMotionModel<vexmaps::OdometryModel> pf_motion_model(
         verticalTrackers{&vertical1},
         &imu);
 
-// sensors
 vexmaps::DistanceSensorModel<vexmaps::DistanceSensorConfiguration>
   front_laser_model(&front_sensor, { 5.25_in, 5.4375_in, 0_stDeg }, "front");
 vexmaps::DistanceSensorModel<vexmaps::DistanceSensorConfiguration>
@@ -116,6 +116,8 @@ vexmaps::ParticleFilterModel<300> pf_model(
  * to keep execution time for this mode under a few seconds.
  */
 void initialize() {
+    pros::c::serctl(SERCTL_DISABLE_COBS,NULL);
+
     // reset the imu
     imu.reset(true);
 }
@@ -177,6 +179,7 @@ void opcontrol() {
             pros::c::task_delay_until(&current_time, to_msec(pf_motion_model.getTaskDeltaTime()));
         }
     }};
+
     pros::Task pf_task{[&] {
         while(true){
             uint32_t current_time = pros::millis();
@@ -184,7 +187,7 @@ void opcontrol() {
             pros::c::task_delay_until(&current_time, to_msec(pf_model.getTaskDeltaTime()));
         }
     }};
-
+    
     // set the pose
     pf_model.setPose({48_in,-48_in,0_stDeg});
 
