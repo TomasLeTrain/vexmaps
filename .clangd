@@ -9,4 +9,4 @@ CompileFlags:
     -isystem/usr/lib/gcc/arm-none-eabi/14.2.0/include-fixed,
     -isystem/usr/lib/gcc/arm-none-eabi/14.2.0/../../../../arm-none-eabi/include
     ]
-  Remove: [ -isystem*, --std=gnu++23 ]
+  Remove: [ -isystem*, --std=gnu++23, -mfp16-format=ieee ]
