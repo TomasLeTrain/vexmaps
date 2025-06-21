@@ -37,16 +37,16 @@ struct PFConfiguration {
     // float near_zero_epsilon = 0.8;
 
     // percentage of particles which have weights near zero to resample
-    float near_zero_particle_percentage = 0.6;
+    float near_zero_particle_percentage = 0.4;
 
     Length cloud_distribution_bounds = 2_in;
-    
+
     // should be at most half the width of the robot
     Length wall_border_width = 4_in;
 };
 
 struct MotionModelConfig {
-    Length forwards_noise = 0.05_in;
+    Length forwards_noise = 0.15_in;
 
     // relates slip to change in distance
     // higher distance travel usually results in wheel slipage, therefore we use
@@ -67,7 +67,7 @@ struct MotionModelConfig {
     float angle_noise = 0.15;
 
     // applies drift to particles
-    Length drift_noise = 0.1_in;
+    Length drift_noise = 0.15_in;
 
     // relation factor between the change in angle and drift
     // big changes in angle plus movement is usually what results in drift
@@ -85,20 +85,29 @@ struct MotionModelConfig {
     Length lost_iter_to_forwards_noise = 0.01_in;
     Length lost_iter_to_drift_noise = 0.01_in;
     Angle lost_iter_to_angle_noise = 1_stDeg;
-} ;
+
+    // amount of time expected between the process noise being applied
+    // this is done to make sure the noise stays consistent regardless of the
+    // intervals in which it is being applied
+    // lost_iter... variables are not affected by this
+    Time process_time = 10_msec;
+
+    // percentage by which noise increases for every process_time time period
+    // done since doubling the noise values may result in way too much noise
+    float process_time_noise_factor = 0.5;
+};
 
 struct DistanceSensorConfiguration {
     // all floats without units are in meters
-    static constexpr double exp_l = 1.68;
-    static constexpr double std_deviation = 0.03175; // 1.25 inches
+    static constexpr double exp_l = 1.5;
+    static constexpr double std_deviation = (2_in).internal();
 
-    // the final distribution should integrates to 1
-    static constexpr double randomCoeff = 0.415;
-    static constexpr double expCoeff = 0.18;
-    static constexpr double normalCoeff = 0.386;
+    // all these should add to one
+    static constexpr double randomCoeff = 0.2;
+    static constexpr double expCoeff = 0.4;
+    static constexpr double normalCoeff = 0.4;
 
     static constexpr bool logging = true;
-// the final distribution should integrates to 1
 };
 
 } // namespace vexmaps

@@ -96,4 +96,19 @@ inline float32x4_t VexpDistribution(float32x4_t x) {
     return vrecpeq_f32(t2);
 }
 
+// ensures distribution's integral is always 1
+template<double exp_l>
+inline float expNormalizationFactor(float v) {
+    constexpr float c0 = 0.877896649672 / exp_l;
+    constexpr float c1 = 0.31681285237; // 1 - c1
+    constexpr float c2 = -1.0 * 0.396549717716 * exp_l * exp_l;
+    constexpr float c3 = -1.0 * 0.0532744591926 * exp_l * exp_l * exp_l * exp_l;
+
+    float v2 = v + c0;
+    v2 *= v2;
+    return 1 / (c1 + v2 * (c2 + c3 * v2));
+}
+
+
+
 } // namespace vexmaps

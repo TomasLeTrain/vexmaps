@@ -46,6 +46,8 @@ class OdometryModel : public LocalizationModel {
     double last_angle;
 
     double distance_traveled;
+    
+    // double last_set_orientation;
 
     // TODO: figure out when to set this value to false
     bool using_drivetrain = false;
@@ -71,8 +73,8 @@ class OdometryModel : public LocalizationModel {
     void init() override {
         imu->set_heading(0);
         
-        // last_imu_angle = imu->get_rotation() * (M_PI / 360.0);
         last_imu_angle = 0;
+        // last_set_orientation = 0;
 
         double local_y_delta = 0;
         double local_x_delta = 0;
@@ -139,7 +141,9 @@ class OdometryModel : public LocalizationModel {
         }else{
             angle_delta = 0;
         }
+
         angle = angle_delta + last_angle;
+        // angle = last_set_orientation - current_imu_angle;
 
         local_x_delta = 0;
         local_y_delta = 0;
@@ -227,6 +231,9 @@ class OdometryModel : public LocalizationModel {
         pose_x = to_in(new_pose.x);
         pose_y = to_in(new_pose.y);
         angle = new_pose.orientation.internal();
+
+        // last_set_orientation = new_pose.orientation.internal();
+        // imu->set_heading(0);
 
         last_pose_x = pose_x;
         last_pose_y = pose_y;

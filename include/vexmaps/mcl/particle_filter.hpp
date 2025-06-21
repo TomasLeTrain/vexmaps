@@ -67,24 +67,17 @@ class ParticleFilter {
     bool no_active_sensors = true;
     int active_sensors = 0;
 
-    Time last_motion_model_timestamp;
-
     // -- functions called in update -- //
 
     void applyMotionModel() {
         globalPoseDelta = units::Pose(0_m, 0_m, 0_stDeg);
-        // only applies motion updates if there are new available deltas
-        auto current_timestamp = motion_model->getLatestUpdateTimestamp();
-        auto current_global_delta = motion_model->getGlobalPoseDelta();
+        // applies noise regardless if we have new information or not
+        // should be fine since the noise is scaled based on time
+        auto current_global_delta = motion_model->precompute();
 
-        if (current_timestamp == last_motion_model_timestamp) {
-            // same update from before or no update available
-            // either way don't move particles
-            return;
-        }
-        appliedMotionModel = true;
         globalPoseDelta = current_global_delta;
-        last_motion_model_timestamp = current_timestamp;
+
+        appliedMotionModel = true;
 
         if (PFConfig.usingVectorizedMotion) {
 
@@ -154,7 +147,50 @@ class ParticleFilter {
         for (auto&& sensor : this->sensors) {
             if (sensor->hasAvailableReading()) {
                 // we assume the weights are valid (not infinity)
-                if (sensor->getVectorized()) {
+                if (sensor->getVectorized2()) {
+                    static constexpr size_t remaining_particles8 =
+                      (N - (N % 8));
+
+                    for (size_t i = 0; i < remaining_particles8; i += 8) {
+                        float32x4_t Vx1 = vld1q_f32((float*)&x[i]);
+                        float32x4_t Vy1 = vld1q_f32((float*)&y[i]);
+                        float32x4_t current_weights1 = vld1q_f32(&weights[i]);
+
+                        float32x4_t Vx2 = vld1q_f32((float*)&x[i + 4]);
+                        float32x4_t Vy2 = vld1q_f32((float*)&y[i + 4]);
+                        float32x4_t current_weights2 =
+                          vld1q_f32(&weights[i + 4]);
+
+                        float32x4_t sensor_weights1, sensor_weights2;
+
+                        sensor->Vevaluate2(Vx1,
+                                           Vy1,
+
+                                           Vx2,
+                                           Vy2,
+
+                                           &sensor_weights1,
+                                           &sensor_weights2);
+
+                        current_weights1 =
+                          vmulq_f32(current_weights1, sensor_weights1);
+                        current_weights2 =
+                          vmulq_f32(current_weights2, sensor_weights2);
+
+                        vst1q_f32(&weights[i], current_weights1);
+                        vst1q_f32(&weights[i + 4], current_weights2);
+                    }
+
+                    // process remaining particles (if any)
+                    for (size_t i = remaining_particles8; i < N; i++) {
+                        const float sensor_weight =
+                          sensor->evaluate(x[i], y[i]);
+
+                        if (std::isfinite(sensor_weight)) {
+                            weights[i] *= sensor_weight;
+                        }
+                    }
+                } else if (sensor->getVectorized()) {
                     for (size_t i = 0; i < remaining_particles; i += 4) {
                         float32x4_t Vx = vld1q_f32((float*)&x[i]);
                         float32x4_t Vy = vld1q_f32((float*)&y[i]);

@@ -11,7 +11,7 @@
 #include "pros/apix.h"
 #include <initializer_list>
 
-vexmaps::MotionModelConfig motion_model_config = { .forwards_noise = 0.04_in };
+vexmaps::MotionModelConfig motion_model_config = { .forwards_noise = 0.15_in };
 vexmaps::PFConfiguration Pfconfig = { .logging = true, .particle_logging = true };
 
 

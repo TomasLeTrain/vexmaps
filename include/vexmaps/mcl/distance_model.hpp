@@ -54,7 +54,7 @@ class DistanceSensorModel : public Sensor {
     Length hor_wall_coeff;
     Length ver_wall_coeff;
 
-    // combines random and exp factors into one
+    float expFactor;
     float constantFactor;
 
     std::string name;
@@ -102,8 +102,8 @@ class DistanceSensorModel : public Sensor {
         sina = units::sin(offset_angle).internal();
 
         // make sure they dont equal inf
-        secant = 1.0 / (std::max(fabs(cosa), 0.0001));
-        cosecant = 1.0 / (std::max(fabs(sina), 0.0001));
+        secant = 1.0 / (std::max(std::abs(cosa), 0.0001));
+        cosecant = 1.0 / (std::max(std::abs(sina), 0.0001));
 
         secant *= cosa >= 0.0 ? 1.0 : -1.0; // give right sign
         cosecant *= sina >= 0.0 ? 1.0 : -1.0; // give right sign
@@ -134,18 +134,22 @@ class DistanceSensorModel : public Sensor {
         x_coeff = secant / DistanceSensorConfig::std_deviation;
         y_coeff = cosecant / DistanceSensorConfig::std_deviation;
 
+        float expNormalizationFactor =
+          expNormalizationFactor<DistanceSensorConfig::exp_l>(
+            measured_distance.internal());
+
         // constant in relation to all particles
         // (only depends on measured distance)
-        float expFactor = DistanceSensorConfig::expCoeff *
-                          expDistribution<DistanceSensorConfig::exp_l>(
-                            measured_distance.internal());
+        expFactor = expNormalizationFactor * DistanceSensorConfig::expCoeff *
+                    expDistribution<DistanceSensorConfig::exp_l>(
+                      measured_distance.internal());
 
         constantFactor = randomFactor + expFactor;
 
         if (DistanceSensorConfig::logging) {
             // name:distance,confidence,std,exit,obj_size
-            std::cout << name << ":" << measured_distance.convert(in)
-                      << "," << distance_sensor->get_confidence() << ","
+            std::cout << name << ":" << measured_distance.convert(in) << ","
+                      << distance_sensor->get_confidence() << ","
                       << DistanceSensorConfig::std_deviation << ","
                       << (exit ? "true" : "false") << ","
                       << distance_sensor->get_object_size() << "\n";
@@ -160,6 +164,10 @@ class DistanceSensorModel : public Sensor {
         return true;
     }
 
+    bool getVectorized2() override {
+        return true;
+    }
+
     // assumes that its only getting called if exit is false
     // this assumption saves some conditionals improving performance
     inline float evaluate(const Point& point) override {
@@ -167,28 +175,26 @@ class DistanceSensorModel : public Sensor {
           units::min(hor_wall_coeff - point.x * x_coeff,
                      ver_wall_coeff - point.y * y_coeff);
 
-        // clang-format off
-        return
-            constantFactor +
-            NormalDistributionApproximation<static_cast<double>(normalFactor)>(mod_difference.internal());
-        // clang-format on
+        auto res = randomFactor;
+        res +=
+          NormalDistributionApproximation<static_cast<double>(normalFactor)>(
+            mod_difference.internal());
+        if (mod_difference.internal() >= 0) res += expFactor;
+        return res;
     }
 
     inline float evaluate(Length x, Length y) override {
-        const Length mod_difference =
-          units::min(hor_wall_coeff - x * x_coeff,
-                     ver_wall_coeff - y * y_coeff);
+        const Length mod_difference = units::min(hor_wall_coeff - x * x_coeff,
+                                                 ver_wall_coeff - y * y_coeff);
 
-        // clang-format off
-        return
-            constantFactor +
-            NormalDistributionApproximation<static_cast<double>(normalFactor)>(mod_difference.internal());
-        // clang-format on
+        auto res = randomFactor;
+        res +=
+          NormalDistributionApproximation<static_cast<double>(normalFactor)>(
+            mod_difference.internal());
+        if (mod_difference.internal() >= 0) res += expFactor;
+        return res;
     }
 
-    // TODO: see if this could be abstracted from the class, allowing multiple
-    // sensors to be evaluated at once as there are enough registers for that
-    //
     // assumes that its only getting called if exit is false
     // this assumption saves some conditionals improving performance
     inline float32x4_t Vevaluate(float32x4_t x, float32x4_t y) override {
@@ -242,14 +248,18 @@ class DistanceSensorModel : public Sensor {
         // difference = min(HC,VC)
         float32x4_t mod_difference = vminq_f32(HC, VC);
 
-        float32x4_t VconstantFactor = vdupq_n_f32(constantFactor);
+        uint32x4_t modMask = vcgeq_f32(mod_difference, vdupq_n_f32(0));
+
+        float32x4_t VconstantFactor = vbslq_f32(modMask,
+                                                vdupq_n_f32(constantFactor),
+                                                vdupq_n_f32(randomFactor));
+
         float32x4_t normal_dist =
           VNormalDistributionApproximation<static_cast<double>(normalFactor)>(
             mod_difference);
 
         // res = randomFactor + normal_dist_pdf * normalFactor
         return vaddq_f32(VconstantFactor, normal_dist);
-        // return vmlaq_n_f32(VrandomFactor, normal_dist, normalFactor);
     }
 
     ~DistanceSensorModel() override = default;
@@ -257,12 +267,65 @@ class DistanceSensorModel : public Sensor {
     std::optional<Point> getExpected() override {
         return std::nullopt;
     }
+
+    // in theory registers should get reused
+    inline void Vevaluate2(float32x4_t x1,
+                           float32x4_t y1,
+                           float32x4_t x2,
+                           float32x4_t y2,
+                           float32x4_t* res1,
+                           float32x4_t* res2) override {
+        float32x4_t HC1 = vdupq_n_f32(Vhor_wall_coeff);
+        float32x4_t VC1 = vdupq_n_f32(Vver_wall_coeff);
+
+        float32x4_t HC2 = vdupq_n_f32(Vhor_wall_coeff);
+        float32x4_t VC2 = vdupq_n_f32(Vver_wall_coeff);
+
+        // HC = hor_wall_coeff - point.x * (secant * r_std_dev)
+        // VC = ver_wall_coeff - point.y * (cosecant * r_std_dev)
+        HC1 = vmlsq_n_f32(HC1, x1, x_coeff);
+        VC1 = vmlsq_n_f32(VC1, y1, y_coeff);
+
+        HC2 = vmlsq_n_f32(HC2, x2, x_coeff);
+        VC2 = vmlsq_n_f32(VC2, y2, y_coeff);
+
+        // difference = min(HC,VC)
+        float32x4_t mod_difference1 = vminq_f32(HC1, VC1);
+        float32x4_t mod_difference2 = vminq_f32(HC2, VC2);
+
+        float32x4_t Vzero = vdupq_n_f32(0);
+        uint32x4_t modMask1 = vcgeq_f32(mod_difference1, Vzero);
+        uint32x4_t modMask2 = vcgeq_f32(mod_difference2, Vzero);
+
+        float32x4_t VconstantFac = vdupq_n_f32(constantFactor);
+        float32x4_t VrandomFactor = vdupq_n_f32(randomFactor);
+
+        float32x4_t VconstantFactor1 =
+          vbslq_f32(modMask1, VconstantFac, VrandomFactor);
+
+        float32x4_t VconstantFactor2 =
+          vbslq_f32(modMask2, VconstantFac, VrandomFactor);
+
+        float32x4_t normal_dist1 =
+          VNormalDistributionApproximation<static_cast<double>(normalFactor)>(
+            mod_difference1);
+        float32x4_t normal_dist2 =
+          VNormalDistributionApproximation<static_cast<double>(normalFactor)>(
+            mod_difference2);
+
+        // res = randomFactor + normal_dist_pdf * normalFactor
+        *res1 = vaddq_f32(VconstantFactor1, normal_dist1);
+        *res2 = vaddq_f32(VconstantFactor2, normal_dist2);
+    }
+
     void disable() override {
         enabled = false;
     }
+
     void enable() override {
         enabled = true;
     }
+
     bool getEnabled() override {
         return enabled;
     }
