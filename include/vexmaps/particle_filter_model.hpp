@@ -41,25 +41,21 @@ class ParticleFilterModel : public LocalizationModel {
     }
 
     void update() override {
-        last_pose = getPose();
-
         particle_filter.update();
 
-        global_delta = units::Pose(
-                getPose() - last_pose,
-                getPose().orientation - last_pose.orientation
-                );
-        Angle avg_angle = (getPose().orientation + last_pose.orientation)/2.0;
-        
-        // rotate back to local 
-        // local_x_delta = global_y_delta * cosa - global_x_delta * sina
-        // local_y_delta = global_y_delta * sina + global_x_delta * cosa
-        local_delta = units::Pose(
-                global_delta.y * units::cos(avg_angle) - global_delta.x * units::sin(avg_angle),
-                global_delta.y * units::sin(avg_angle) + global_delta.x * units::cos(avg_angle),
-                global_delta.orientation);
+        units::Pose curr_pose = getPose();
+
+        global_delta =
+          units::Pose(curr_pose - last_pose,
+                      curr_pose.orientation - last_pose.orientation);
+
+        Angle avg_angle = (curr_pose.orientation + last_pose.orientation) / 2.0;
+
+        local_delta = globalToLocalDelta(global_delta, avg_angle);
 
         latest_update_time = from_msec(pros::millis());
+
+        last_pose = getPose();
     }
 
     units::Pose getPose() override {

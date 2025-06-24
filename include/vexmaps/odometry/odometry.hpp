@@ -29,8 +29,8 @@ class OdometryModel : public LocalizationModel {
 
     double last_imu_angle;
 
-    double local_y_delta = 0;
     double local_x_delta = 0;
+    double local_y_delta = 0;
 
     double global_y_delta = 0;
     double global_x_delta = 0;
@@ -145,8 +145,8 @@ class OdometryModel : public LocalizationModel {
         angle = angle_delta + last_angle;
         // angle = last_set_orientation - current_imu_angle;
 
-        local_x_delta = 0;
         local_y_delta = 0;
+        local_x_delta = 0;
 
         double x_tracker_count = 0;
         double y_tracker_count = 0;
@@ -155,18 +155,18 @@ class OdometryModel : public LocalizationModel {
         // clang-format off
         if (fabs(angle_delta) < 1e-6) {
             if (using_drivetrain) {
-                local_y_delta += (left_tracker->getDeltaDistance() + left_tracker->getDeltaDistance()) / 2.0;
+                local_x_delta += (left_tracker->getDeltaDistance() + left_tracker->getDeltaDistance()) / 2.0;
                 y_tracker_count += 1.0;
             }
             // printf("local_y_delta so far1: %f\n",local_y_delta);
 
             for (auto&& tracker : vertical_trackers) {
-                local_y_delta += tracker->getDeltaDistance();
+                local_x_delta += tracker->getDeltaDistance();
                 y_tracker_count += 1.0;
             }
 
             for (auto&& tracker : horizontal_trackers) {
-                local_x_delta += tracker->getDeltaDistance();
+                local_y_delta += tracker->getDeltaDistance();
                 x_tracker_count += 1.0;
             }
         } else {
@@ -174,21 +174,21 @@ class OdometryModel : public LocalizationModel {
             // printf("multiplier: %f\n",sin_multiplier);
 
             if (using_drivetrain) {
-                double local_y_left_delta = sin_multiplier * (left_tracker->getDeltaDistance() / angle_delta + left_tracker->getOffset());
-                double local_y_right_delta = sin_multiplier * (right_tracker->getDeltaDistance() / angle_delta + right_tracker->getOffset());
-                local_y_delta += (local_y_left_delta + local_y_right_delta) / 2.0;
+                double local_x_left_delta = sin_multiplier * (left_tracker->getDeltaDistance() / angle_delta + left_tracker->getOffset());
+                double local_x_right_delta = sin_multiplier * (right_tracker->getDeltaDistance() / angle_delta + right_tracker->getOffset());
+                local_x_delta += (local_x_left_delta + local_x_right_delta) / 2.0;
                 y_tracker_count += 1.0;
             }
             // printf("local_y_delta so far2: %f\n",local_y_delta);
 
             for (auto&& tracker : vertical_trackers) {
-                local_y_delta += sin_multiplier * (tracker->getDeltaDistance() / angle_delta + tracker->getOffset());
+                local_x_delta += sin_multiplier * (tracker->getDeltaDistance() / angle_delta + tracker->getOffset());
                 // printf("\\left(%f,",tracker->getDeltaDistance() / angle_delta);
                 y_tracker_count += 1.0;
             }
 
             for (auto&& tracker : horizontal_trackers) {
-                local_x_delta += sin_multiplier * (tracker->getDeltaDistance() / angle_delta + tracker->getOffset());
+                local_y_delta += sin_multiplier * (tracker->getDeltaDistance() / angle_delta + tracker->getOffset());
                 // printf("%f\\right),\n",tracker->getDeltaDistance() / angle_delta);
                 x_tracker_count += 1.0;
             }
@@ -207,8 +207,8 @@ class OdometryModel : public LocalizationModel {
         double sina = sin(avg_angle);
         double cosa = cos(avg_angle);
 
-        global_x_delta = local_y_delta * cosa - local_x_delta * sina;
-        global_y_delta = local_y_delta * sina + local_x_delta * cosa;
+        global_x_delta = local_x_delta * cosa - local_y_delta * sina;
+        global_y_delta = local_x_delta * sina + local_y_delta * cosa;
         // printf("global_x/y: %f %f\n",global_x_delta,global_y_delta);
 
         last_pose_x = pose_x;
@@ -217,8 +217,8 @@ class OdometryModel : public LocalizationModel {
         pose_x += global_x_delta;
         pose_y += global_y_delta;
 
-        distance_traveled += sqrt((global_y_delta * global_y_delta) +
-                                  (global_x_delta * global_x_delta));
+        distance_traveled += sqrt((global_x_delta * global_x_delta) +
+                                  (global_y_delta * global_y_delta));
 
         // update last- variables
         last_imu_angle = current_imu_angle;

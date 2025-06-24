@@ -69,4 +69,18 @@ inline pros::Task createLocalizationTask(LocalizationModel* model){
     return task;
 }
 
+inline units::Pose globalToLocalDelta(units::Pose global_delta, Angle pose_angle){
+        return units::Pose(
+                global_delta.x * units::cos(-pose_angle) - global_delta.y * units::sin(-pose_angle),
+                global_delta.x * units::sin(-pose_angle) + global_delta.y * units::cos(-pose_angle),
+                global_delta.orientation);
+}
+
+inline units::Pose localToGlobalDelta(units::Pose local_delta, Angle pose_angle){
+        return units::Pose(
+                local_delta.x * units::cos(pose_angle) - local_delta.y * units::sin(pose_angle),
+                local_delta.x * units::sin(pose_angle) + local_delta.y * units::cos(pose_angle),
+                local_delta.orientation);
+}
+
 }; // namespace vexmaps
