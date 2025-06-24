@@ -168,21 +168,12 @@ class DistanceSensorModel : public Sensor {
         return true;
     }
 
-    // assumes that its only getting called if exit is false
-    // this assumption saves some conditionals improving performance
     inline float evaluate(const Point& point) override {
-        const Length mod_difference =
-          units::min(hor_wall_coeff - point.x * x_coeff,
-                     ver_wall_coeff - point.y * y_coeff);
-
-        auto res = randomFactor;
-        res +=
-          NormalDistributionApproximation<static_cast<double>(normalFactor)>(
-            mod_difference.internal());
-        if (mod_difference.internal() >= 0) res += expFactor;
-        return res;
+        return evaluate(point.x, point.y);
     }
 
+    // assumes that its only getting called if exit is false
+    // this assumption saves some conditionals improving performance
     inline float evaluate(Length x, Length y) override {
         const Length mod_difference = units::min(hor_wall_coeff - x * x_coeff,
                                                  ver_wall_coeff - y * y_coeff);
