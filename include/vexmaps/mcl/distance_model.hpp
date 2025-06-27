@@ -165,7 +165,8 @@ class DistanceSensorModel : public Sensor {
     }
 
     bool getVectorized2() override {
-        return true;
+        // return true;
+        return false;
     }
 
     inline float evaluate(const Point& point) override {

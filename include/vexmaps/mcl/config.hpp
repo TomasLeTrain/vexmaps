@@ -37,16 +37,14 @@ struct PFConfiguration {
     // float near_zero_epsilon = 0.8;
 
     // percentage of particles which have weights near zero to resample
-    float near_zero_particle_percentage = 0.4;
-
-    Length cloud_distribution_bounds = 2_in;
+    float near_zero_particle_percentage = 0.9;
 
     // should be at most half the width of the robot
-    Length wall_border_width = 4_in;
+    Length wall_border_width = 6_in;
 };
 
 struct MotionModelConfig {
-    Length forwards_noise = 0.15_in;
+    Length forwards_noise = 0.2_in;
 
     // relates slip to change in distance
     // higher distance travel usually results in wheel slipage, therefore we use
@@ -67,7 +65,7 @@ struct MotionModelConfig {
     float angle_noise = 0.15;
 
     // applies drift to particles
-    Length drift_noise = 0.15_in;
+    Length drift_noise = 0.2_in;
 
     // relation factor between the change in angle and drift
     // big changes in angle plus movement is usually what results in drift
@@ -82,8 +80,8 @@ struct MotionModelConfig {
 
     // relates number of lost iterations to additional noise in the system
     // set to zero to disable lost iterations from applying at all
-    Length lost_iter_to_forwards_noise = 0.01_in;
-    Length lost_iter_to_drift_noise = 0.01_in;
+    Length lost_iter_to_forwards_noise = 0.1_in;
+    Length lost_iter_to_drift_noise = 0.1_in;
     Angle lost_iter_to_angle_noise = 1_stDeg;
 
     // amount of time expected between the process noise being applied
@@ -107,7 +105,7 @@ struct DistanceSensorConfiguration {
     static constexpr double expCoeff = 0.4;
     static constexpr double normalCoeff = 0.4;
 
-    static constexpr bool logging = true;
+    static constexpr bool logging = false;
 };
 
 } // namespace vexmaps

@@ -14,7 +14,7 @@ inline float32x4_t V_rsqrt(float32x4_t number) {
     y = number;
     i = vreinterpretq_u32_f32(y); // evil floating point bit level hacking
     i = magic_number - vshrq_n_u32(i, 1); // what the fuck?
-    y = vreinterpretq_f32_u32(y);
+    y = vreinterpretq_f32_u32(i);
     y = y * (threehalfs - (x2 * y * y)); // 1st iteration
     //	y  = y * ( threehalfs - ( x2 * y * y ) );   // 2nd iteration, this can
     // be removed

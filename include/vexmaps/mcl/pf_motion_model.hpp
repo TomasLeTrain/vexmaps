@@ -165,14 +165,29 @@ class PfMotionModel : public BasePfMotionModel {
         accumulated_global_delta = units::Pose();
 
         Time current_precompute_time = from_msec(pros::millis());
-        Time delta_time = current_precompute_time - last_precomputed_time;
+        Time delta_time;
+
+        if (std::isfinite(last_precomputed_time.internal())) {
+            delta_time = current_precompute_time - last_precomputed_time;
+        } else {
+            // assume task delta time
+            delta_time = base_motion_model.getTaskDeltaTime();
+        }
         last_precomputed_time = current_precompute_time;
 
         abs_delta_theta = units::abs(global_pose_delta.orientation);
 
         // scales noise according to the amount of time that has passed
+        float delta_times = (delta_time / motionModelConfig.process_time);
+
+        if (delta_times < 1) {
+            delta_times = 0;
+        } else {
+            delta_times -= 1;
+        }
+
         float time_noise_multiplier =
-          1 + (delta_time / motionModelConfig.process_time) * motionModelConfig.process_time_noise_factor;
+          1 + delta_times * motionModelConfig.process_time_noise_factor;
 
         const Length time_dependent_forwards_noise =
           motionModelConfig.forwards_noise +

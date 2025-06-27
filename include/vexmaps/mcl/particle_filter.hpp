@@ -8,6 +8,7 @@
 #include "vexmaps/mcl/pf_motion_model.hpp"
 #include "vexmaps/mcl/sensor.hpp"
 #include "vexmaps/mcl/utils.hpp"
+#include "vexmath/functions/vectorized_sqrt.hpp"
 #include <arm_neon.h>
 
 namespace vexmaps {
@@ -18,9 +19,9 @@ class ParticleFilter {
     // used for vectorization
     static constexpr size_t remaining_particles = (N - (N % 4));
 
-    Length x[N];
-    Length y[N];
-    float weights[N];
+    alignas(16) Length x[N];
+    alignas(16) Length y[N];
+    alignas(16) float weights[N];
 
     std::vector<Sensor*> sensors;
 
@@ -67,6 +68,8 @@ class ParticleFilter {
     bool no_active_sensors = true;
     int active_sensors = 0;
 
+    float ess;
+
     // -- functions called in update -- //
 
     void applyMotionModel() {
@@ -79,11 +82,14 @@ class ParticleFilter {
 
         appliedMotionModel = true;
 
+        auto thing = motion_model->noisyGlobalDelta();
+
         if (PFConfig.usingVectorizedMotion) {
 
             for (size_t i = 0; i < remaining_particles; i += 4) {
                 float32x4_t motionDataX, motionDataY;
                 motion_model->VnoisyGlobalDelta(&motionDataX, &motionDataY);
+
                 float32x4_t Vx = vld1q_f32((float*)&x[i]);
                 float32x4_t Vy = vld1q_f32((float*)&y[i]);
 
@@ -191,6 +197,7 @@ class ParticleFilter {
                         }
                     }
                 } else if (sensor->getVectorized()) {
+                    // printf("normal vectorization\n");
                     for (size_t i = 0; i < remaining_particles; i += 4) {
                         float32x4_t Vx = vld1q_f32((float*)&x[i]);
                         float32x4_t Vy = vld1q_f32((float*)&y[i]);
@@ -237,24 +244,65 @@ class ParticleFilter {
         //     weighted_y_sum += y[i].internal() * weights[i];
         // }
 
+        // effective_sample_size = sum(w[i]) / sum (w[i]^2) -> 1 / sum (w[i]^2)
+        ess = 0;
+
+        if (PFConfig.usingVectorizedMotion) {
+            float32x4_t Vess = vdupq_n_f32(0.0);
+            for (size_t i = 0; i < remaining_particles; i += 4) {
+                float32x4_t current_weights = vld1q_f32(&weights[i]);
+                Vess = vmlaq_f32(Vess, current_weights, current_weights);
+            }
+            for (size_t i = remaining_particles; i < N; i++) {
+                ess += weights[i] * weights[i];
+            }
+
+            ess += vgetq_lane_f32(Vess, 0) + vgetq_lane_f32(Vess, 1) +
+                   vgetq_lane_f32(Vess, 2) + vgetq_lane_f32(Vess, 3);
+
+        } else {
+            for (size_t i = 0; i < N; i++) {
+                ess += weights[i] * weights[i];
+            }
+        }
+
+        ess = sum_factor / ess;
+
+        if (active_sensors <= 1) {
+            updatePrediction(getPose().x + globalPoseDelta.x,
+                             getPose().y + globalPoseDelta.y,
+                             getPose().orientation +
+                               globalPoseDelta.orientation);
+            return;
+        }
+
+        float weight_sum = 0;
+
         if (PFConfig.usingVectorizedMotion) {
             float32x4_t Vweighted_x_sum = vdupq_n_f32(0.0);
             float32x4_t Vweighted_y_sum = vdupq_n_f32(0.0);
+            float32x4_t Vweight_sum = vdupq_n_f32(0.0);
 
             for (size_t i = 0; i < remaining_particles; i += 4) {
                 float32x4_t Vx = vld1q_f32((float*)&x[i]);
                 float32x4_t Vy = vld1q_f32((float*)&y[i]);
                 float32x4_t current_weights = vld1q_f32(&weights[i]);
 
+                current_weights = Vsqrt(current_weights);
+
                 Vweighted_x_sum =
                   vmlaq_f32(Vweighted_x_sum, Vx, current_weights);
                 Vweighted_y_sum =
                   vmlaq_f32(Vweighted_y_sum, Vy, current_weights);
+
+                Vweight_sum = vaddq_f32(Vweight_sum, current_weights);
             }
 
             for (size_t i = remaining_particles; i < N; i++) {
-                weighted_x_sum += x[i].internal() * weights[i];
-                weighted_x_sum += y[i].internal() * weights[i];
+                float current_weight = std::sqrt(weights[i]);
+                weighted_x_sum += x[i].internal() * current_weight;
+                weighted_x_sum += y[i].internal() * current_weight;
+                weight_sum += current_weight;
             }
 
             weighted_x_sum += vgetq_lane_f32(Vweighted_x_sum, 0) +
@@ -266,37 +314,24 @@ class ParticleFilter {
                               vgetq_lane_f32(Vweighted_y_sum, 1) +
                               vgetq_lane_f32(Vweighted_y_sum, 2) +
                               vgetq_lane_f32(Vweighted_y_sum, 3);
+
+            weight_sum +=
+              vgetq_lane_f32(Vweight_sum, 0) + vgetq_lane_f32(Vweight_sum, 1) +
+              vgetq_lane_f32(Vweight_sum, 2) + vgetq_lane_f32(Vweight_sum, 3);
         } else {
             for (size_t i = 0; i < N; i++) {
-                weighted_x_sum += x[i].internal() * weights[i];
-                weighted_x_sum += y[i].internal() * weights[i];
+                float current_weight = std::sqrt(weights[i]);
+                weighted_x_sum += x[i].internal() * current_weight;
+                weighted_x_sum += y[i].internal() * current_weight;
+                weight_sum += current_weight;
             }
         }
 
-        if (active_sensors >= 2) {
-            // updates prediction before resampling, as resampling sets all
-            // weights to 1/N whcih can significantly shift the prediction
-            updatePrediction((weighted_x_sum / sum_factor) * m,
-                             (weighted_y_sum / sum_factor) * m,
-                             motion_model->getPose().orientation);
-        } else {
-            // updating the prediction with only one sensor might be a bad idea,
-            // as it might be heavily biased towards that specific sensor. it
-            // might be better that the prediction gets affected by the
-            // new distribution of particles after resampling
-            // TODO: see if it would be possble to determine what axis a sensor
-            // "locks" and using the weighted sum to determine that axis
-            // basically simulating a distance sensor reset
-            // this might be impossible since the wall being detected (and
-            // therefore the axis) can change between particles
-            //
-            // we always need to update the prediction even if not based on
-            // particles
-            updatePrediction(getPose().x + globalPoseDelta.x,
-                             getPose().y + globalPoseDelta.y,
-                             getPose().orientation +
-                               globalPoseDelta.orientation);
-        }
+        // updates prediction before resampling, as resampling sets all
+        // weights to 1/N whcih can significantly shift the prediction
+        updatePrediction((weighted_x_sum / weight_sum) * m,
+                         (weighted_y_sum / weight_sum) * m,
+                         motion_model->getPose().orientation);
     }
 
     // resamples particles using stochastic universal sampling
@@ -484,33 +519,6 @@ class ParticleFilter {
         updatePredictionBasedOnParticles();
 
         int zero_particles = 0;
-
-        // effective_sample_size = sum(w[i]) / sum (w[i]^2) -> 1 / sum (w[i]^2)
-        float ess = 0;
-
-        if (PFConfig.usingVectorizedMotion) {
-            float32x4_t Vess = vdupq_n_f32(0.0);
-
-            for (size_t i = 0; i < remaining_particles; i += 4) {
-                float32x4_t Vweights = vld1q_f32(&weights[i]);
-
-                Vess = vmlaq_f32(Vess, Vweights, Vweights);
-            }
-
-            for (size_t i = remaining_particles; i < N; i++) {
-                ess += weights[i] * weights[i];
-            }
-
-            ess += vgetq_lane_f32(Vess, 0) + vgetq_lane_f32(Vess, 1) +
-                   vgetq_lane_f32(Vess, 2) + vgetq_lane_f32(Vess, 3);
-
-        } else {
-            for (size_t i = 0; i < N; i++) {
-                ess += weights[i] * weights[i];
-            }
-        }
-
-        ess = sum_factor / ess;
 
         bool resampling = false;
 

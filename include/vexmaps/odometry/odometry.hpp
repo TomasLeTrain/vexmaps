@@ -46,21 +46,22 @@ class OdometryModel : public LocalizationModel {
     double last_angle;
 
     double distance_traveled;
-    
+
     // double last_set_orientation;
 
     // TODO: figure out when to set this value to false
-    bool using_drivetrain = false;
+    bool use_drivetrain = false;
 
     Time delta_time = 10.0_msec;
     Time latest_update_time = 0.0_sec;
 
   public:
-    OdometryModel(MotorGroupTracking* left_tracker,
-                  MotorGroupTracking* right_tracker,
-                  std::initializer_list<HorizontalOdometryTracker*> horizontal_trackers,
-                  std::initializer_list<VerticalOdometryTracker*> vertical_trackers,
-                  pros::Imu* imu)
+    OdometryModel(
+      MotorGroupTracking* left_tracker,
+      MotorGroupTracking* right_tracker,
+      std::initializer_list<HorizontalOdometryTracker*> horizontal_trackers,
+      std::initializer_list<VerticalOdometryTracker*> vertical_trackers,
+      pros::Imu* imu)
         : left_tracker(left_tracker),
           right_tracker(right_tracker),
           horizontal_trackers(horizontal_trackers),
@@ -72,7 +73,7 @@ class OdometryModel : public LocalizationModel {
      */
     void init() override {
         imu->set_heading(0);
-        
+
         last_imu_angle = 0;
         // last_set_orientation = 0;
 
@@ -113,19 +114,32 @@ class OdometryModel : public LocalizationModel {
         left_tracker->update();
         right_tracker->update();
 
+        int available_vertical = 0;
+        int available_horizontal = 0;
+
         for (auto&& tracker : vertical_trackers) {
             tracker->update();
+            available_vertical += tracker->getAvailable();
         }
         for (auto&& tracker : horizontal_trackers) {
             tracker->update();
+            available_horizontal += tracker->getAvailable();
+        }
+
+        bool drivetrain_enabled = false;
+
+        // if no vertical trackers then we use drivetrain regardless of
+        // configuration
+        if (available_vertical == 0 || use_drivetrain) {
+            drivetrain_enabled = true;
         }
 
         double current_imu_angle = last_imu_angle;
 
-        if(std::isfinite(imu->get_rotation())){
+        if (std::isfinite(imu->get_rotation())) {
             current_imu_angle = imu->get_rotation() * (M_PI / 180.0);
-        }else{
-            printf("warning: imu not finite\n");
+        } else {
+            printf("WARNING: IMU NOT FINITE\n");
             current_imu_angle = last_imu_angle;
             // return;
         }
@@ -136,9 +150,9 @@ class OdometryModel : public LocalizationModel {
 
         // makes it so that we dont have to deal with compass -> std rad
         // conversion
-        if(imu_angle_delta != 0){
+        if (imu_angle_delta != 0) {
             angle_delta = -imu_angle_delta;
-        }else{
+        } else {
             angle_delta = 0;
         }
 
@@ -154,43 +168,51 @@ class OdometryModel : public LocalizationModel {
 
         // clang-format off
         if (fabs(angle_delta) < 1e-6) {
-            if (using_drivetrain) {
+            if (drivetrain_enabled) {
                 local_x_delta += (left_tracker->getDeltaDistance() + left_tracker->getDeltaDistance()) / 2.0;
-                y_tracker_count += 1.0;
+                x_tracker_count += 1.0;
             }
             // printf("local_y_delta so far1: %f\n",local_y_delta);
 
             for (auto&& tracker : vertical_trackers) {
-                local_x_delta += tracker->getDeltaDistance();
-                y_tracker_count += 1.0;
+                if(tracker->getAvailable()){
+                    local_x_delta += tracker->getDeltaDistance();
+                    x_tracker_count += 1.0;
+                }
             }
 
             for (auto&& tracker : horizontal_trackers) {
-                local_y_delta += tracker->getDeltaDistance();
-                x_tracker_count += 1.0;
+                if(tracker->getAvailable()){
+                    local_y_delta += tracker->getDeltaDistance();
+                    y_tracker_count += 1.0;
+                }
             }
         } else {
             double sin_multiplier = 2.0 * sin(angle_delta / 2.0);
             // printf("multiplier: %f\n",sin_multiplier);
 
-            if (using_drivetrain) {
+            if (drivetrain_enabled) {
                 double local_x_left_delta = sin_multiplier * (left_tracker->getDeltaDistance() / angle_delta + left_tracker->getOffset());
                 double local_x_right_delta = sin_multiplier * (right_tracker->getDeltaDistance() / angle_delta + right_tracker->getOffset());
                 local_x_delta += (local_x_left_delta + local_x_right_delta) / 2.0;
-                y_tracker_count += 1.0;
+                x_tracker_count += 1.0;
             }
             // printf("local_y_delta so far2: %f\n",local_y_delta);
 
             for (auto&& tracker : vertical_trackers) {
-                local_x_delta += sin_multiplier * (tracker->getDeltaDistance() / angle_delta + tracker->getOffset());
-                // printf("\\left(%f,",tracker->getDeltaDistance() / angle_delta);
-                y_tracker_count += 1.0;
+                if(tracker->getAvailable()){
+                    local_x_delta += sin_multiplier * (tracker->getDeltaDistance() / angle_delta + tracker->getOffset());
+                    // printf("\\left(%f,",tracker->getDeltaDistance() / angle_delta);
+                    x_tracker_count += 1.0;
+                }
             }
 
             for (auto&& tracker : horizontal_trackers) {
-                local_y_delta += sin_multiplier * (tracker->getDeltaDistance() / angle_delta + tracker->getOffset());
-                // printf("%f\\right),\n",tracker->getDeltaDistance() / angle_delta);
-                x_tracker_count += 1.0;
+                if(tracker->getAvailable()){
+                    local_y_delta += sin_multiplier * (tracker->getDeltaDistance() / angle_delta + tracker->getOffset());
+                    // printf("%f\\right),\n",tracker->getDeltaDistance() / angle_delta);
+                    y_tracker_count += 1.0;
+                }
             }
         }
         // clang-format on
