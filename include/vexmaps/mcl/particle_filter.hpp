@@ -60,6 +60,8 @@ class ParticleFilter {
 
     // the sum of the particles before normalization
     float total_weight = 0;
+    // maximum weight of normalized particles
+    float max_unnormalized_weight = 0;
     float max_weight = 0;
 
     // holds if none of the sensors detect values
@@ -235,39 +237,6 @@ class ParticleFilter {
     }
 
     void updatePredictionBasedOnParticles() {
-
-        float weighted_x_sum = 0.0;
-        float weighted_y_sum = 0.0;
-
-        // for (size_t i = 0; i < N; i++) {
-        //     weighted_x_sum += x[i].internal() * weights[i];
-        //     weighted_y_sum += y[i].internal() * weights[i];
-        // }
-
-        // effective_sample_size = sum(w[i]) / sum (w[i]^2) -> 1 / sum (w[i]^2)
-        ess = 0;
-
-        if (PFConfig.usingVectorizedMotion) {
-            float32x4_t Vess = vdupq_n_f32(0.0);
-            for (size_t i = 0; i < remaining_particles; i += 4) {
-                float32x4_t current_weights = vld1q_f32(&weights[i]);
-                Vess = vmlaq_f32(Vess, current_weights, current_weights);
-            }
-            for (size_t i = remaining_particles; i < N; i++) {
-                ess += weights[i] * weights[i];
-            }
-
-            ess += vgetq_lane_f32(Vess, 0) + vgetq_lane_f32(Vess, 1) +
-                   vgetq_lane_f32(Vess, 2) + vgetq_lane_f32(Vess, 3);
-
-        } else {
-            for (size_t i = 0; i < N; i++) {
-                ess += weights[i] * weights[i];
-            }
-        }
-
-        ess = sum_factor / ess;
-
         if (active_sensors <= 1) {
             updatePrediction(getPose().x + globalPoseDelta.x,
                              getPose().y + globalPoseDelta.y,
@@ -276,61 +245,28 @@ class ParticleFilter {
             return;
         }
 
+        // sum of included particles multiplied by their respective weights
+        Length weighted_x_sum = 0.0_m;
+        Length weighted_y_sum = 0.0_m;
+
+        // sum of the weights of the particles included in the prediction
         float weight_sum = 0;
 
-        if (PFConfig.usingVectorizedMotion) {
-            float32x4_t Vweighted_x_sum = vdupq_n_f32(0.0);
-            float32x4_t Vweighted_y_sum = vdupq_n_f32(0.0);
-            float32x4_t Vweight_sum = vdupq_n_f32(0.0);
+        // TODO: vectorize
+        const float max_weight_threshold = max_weight * PFConfig.weightPredictionFactor; 
 
-            for (size_t i = 0; i < remaining_particles; i += 4) {
-                float32x4_t Vx = vld1q_f32((float*)&x[i]);
-                float32x4_t Vy = vld1q_f32((float*)&y[i]);
-                float32x4_t current_weights = vld1q_f32(&weights[i]);
-
-                current_weights = Vsqrt(current_weights);
-
-                Vweighted_x_sum =
-                  vmlaq_f32(Vweighted_x_sum, Vx, current_weights);
-                Vweighted_y_sum =
-                  vmlaq_f32(Vweighted_y_sum, Vy, current_weights);
-
-                Vweight_sum = vaddq_f32(Vweight_sum, current_weights);
-            }
-
-            for (size_t i = remaining_particles; i < N; i++) {
-                float current_weight = std::sqrt(weights[i]);
-                weighted_x_sum += x[i].internal() * current_weight;
-                weighted_x_sum += y[i].internal() * current_weight;
-                weight_sum += current_weight;
-            }
-
-            weighted_x_sum += vgetq_lane_f32(Vweighted_x_sum, 0) +
-                              vgetq_lane_f32(Vweighted_x_sum, 1) +
-                              vgetq_lane_f32(Vweighted_x_sum, 2) +
-                              vgetq_lane_f32(Vweighted_x_sum, 3);
-
-            weighted_y_sum += vgetq_lane_f32(Vweighted_y_sum, 0) +
-                              vgetq_lane_f32(Vweighted_y_sum, 1) +
-                              vgetq_lane_f32(Vweighted_y_sum, 2) +
-                              vgetq_lane_f32(Vweighted_y_sum, 3);
-
-            weight_sum +=
-              vgetq_lane_f32(Vweight_sum, 0) + vgetq_lane_f32(Vweight_sum, 1) +
-              vgetq_lane_f32(Vweight_sum, 2) + vgetq_lane_f32(Vweight_sum, 3);
-        } else {
-            for (size_t i = 0; i < N; i++) {
-                float current_weight = std::sqrt(weights[i]);
-                weighted_x_sum += x[i].internal() * current_weight;
-                weighted_x_sum += y[i].internal() * current_weight;
-                weight_sum += current_weight;
+        for(int i = 0;i < N;i++){
+            if(max_weight_threshold <= weights[i]){
+                weighted_x_sum += x[i] * weights[i];
+                weighted_x_sum += y[i] * weights[i];
+                weight_sum += weights[i];
             }
         }
 
         // updates prediction before resampling, as resampling sets all
-        // weights to 1/N whcih can significantly shift the prediction
-        updatePrediction((weighted_x_sum / weight_sum) * m,
-                         (weighted_y_sum / weight_sum) * m,
+        // weights to 1/N which can significantly shift the prediction
+        updatePrediction(weighted_x_sum / weight_sum,
+                         weighted_y_sum / weight_sum,
                          motion_model->getPose().orientation);
     }
 
@@ -360,6 +296,28 @@ class ParticleFilter {
             // sets weight to average value
             weights[i] = average_weight;
         }
+    }
+
+    void updateLostIterationCount() {
+        if (active_sensors >= 2) {
+            if (max_unnormalized_weight <= PFConfig.low_weight_sum_threshold) {
+                // none of the particles are likely at all, meaning we have no
+                // clue where the robot could be
+                lost_iteration_count++;
+
+                printf(
+                  "No particles are likely: max is: %f, threshold is: " "%f\n, " "lost " "iterat" "ion " "count " "now: " "%d",
+                  total_weight,
+                  PFConfig.low_weight_sum_threshold,
+                  lost_iteration_count);
+            } else {
+                // we are not lost this iteration
+                // (and we have enough sensors to accurately determine this),
+                // so reset the lost iteration count
+                lost_iteration_count = 0;
+            }
+        }
+        motion_model->updateLostIterationCount(lost_iteration_count);
     }
 
     void endUpdate() {
@@ -456,6 +414,7 @@ class ParticleFilter {
         weightedParticles = true;
 
         total_weight = 0;
+        max_unnormalized_weight = 0;
         max_weight = 0;
 
         // likely vectorized
@@ -463,38 +422,12 @@ class ParticleFilter {
             total_weight += weights[i];
         }
 
-        // should be pretty fast because of hard abi
+        // also vectorized?
         for (size_t i = 0; i < N; i++) {
-            max_weight = fmaxf(max_weight, weights[i]);
+            max_unnormalized_weight =
+              std::max(max_unnormalized_weight, weights[i]);
         }
 
-        // TODO: this might not be the best metric since it might depend on how
-        // many sensor there are and their pdf. it would be better to have a
-        // metric for how good the best guesses are
-        // Maybe using max_weight instead could be better
-        if (active_sensors >= 2) {
-            if (total_weight <= PFConfig.low_weight_sum_threshold) {
-                // none of the particles are likely at all, meaning we have no
-                // clue where the robot could be
-                lost_iteration_count++;
-
-                printf(
-                  "No particles are likely: sum is: %f, threshold is: " "%f\n, " "lost " "iterat" "ion " "count " "now: " "%d",
-                  total_weight,
-                  PFConfig.low_weight_sum_threshold,
-                  lost_iteration_count);
-            } else {
-                // we are not lost this iteration
-                // (and we have enough sensors to accurately determine this),
-                // so reset the lost iteration count
-                lost_iteration_count = 0;
-            }
-        }
-        motion_model->updateLostIterationCount(lost_iteration_count);
-
-        // this would allow us to change normalization to make the particles sum
-        // to a different number this could affect how much previous weights /
-        // current weights affect the final weights
         const float normalization_factor = sum_factor / total_weight;
 
         // normalizes weights to add up to sum_factor
@@ -502,6 +435,10 @@ class ParticleFilter {
         for (size_t i = 0; i < N; i++) {
             weights[i] *= normalization_factor;
         }
+
+        max_weight = max_unnormalized_weight * normalization_factor;
+
+        updateLostIterationCount();
 
         if (PFConfig.logging) {
             printf("start particles\n");
@@ -522,6 +459,16 @@ class ParticleFilter {
 
         bool resampling = false;
 
+        // effective_sample_size = sum(w[i]) / sum (w[i]^2) -> 1 / sum (w[i]^2)
+        ess = 0;
+
+        // very likely vectorized
+        for (size_t i = 0; i < N; i++) {
+            ess += weights[i] * weights[i];
+        }
+
+        ess = sum_factor / ess;
+
         if (ess <
             PFConfig.near_zero_particle_percentage * static_cast<float>(N)) {
             resampling = true;
@@ -539,16 +486,10 @@ class ParticleFilter {
      * @brief Initializes particles around a point based on some covariance.
      * Useful for initializing particles around a known starting point.
      *
-     * @param point Point around which particles are to be initialized
+     * @param pose Pose around which particles are to be initialized
      * @param std_deviation a measure of how dispersed the particles would be. A
      * greater value will cause particles to deviate more from the reference
      * point.
-     *
-     * @b Example
-     * @code {.cpp}
-     * Point start_point = {10.0_in,5.0_in};
-     * particle_filter.init_normal_around_point(start_point, 5_in);
-     * @endcod
      */
     void initNormal(const units::Pose pose, const Length std_deviation) {
         std::normal_distribution x_dist(pose.x.internal(),

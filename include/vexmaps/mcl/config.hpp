@@ -39,6 +39,10 @@ struct PFConfiguration {
     // percentage of particles which have weights near zero to resample
     float near_zero_particle_percentage = 0.9;
 
+    // percentage of the max weight at which a particle is included for the prediction
+    // the lower the number the less accurate prediction will be but it might be smoother
+    float weightPredictionFactor = 0.8;
+
     // should be at most half the width of the robot
     Length wall_border_width = 6_in;
 };
@@ -101,9 +105,9 @@ struct DistanceSensorConfiguration {
     static constexpr double std_deviation = (2_in).internal();
 
     // all these should add to one
-    static constexpr double randomCoeff = 0.2;
-    static constexpr double expCoeff = 0.4;
-    static constexpr double normalCoeff = 0.4;
+    static constexpr double randomCoeff = 0.175;
+    static constexpr double expCoeff = 0.3;
+    static constexpr double normalCoeff = 0.525;
 
     static constexpr bool logging = false;
 };
