@@ -37,19 +37,16 @@ class OdometryModel : public LocalizationModel {
 
     double angle_delta = 0;
 
-    double pose_x;
-    double pose_y;
-    double angle;
+    double pose_x = 0;
+    double pose_y = 0;
+    double angle = 0;
 
-    double last_pose_x;
-    double last_pose_y;
-    double last_angle;
+    double last_pose_x = 0;
+    double last_pose_y = 0;
+    double last_angle = 0;
 
     double distance_traveled;
 
-    // double last_set_orientation;
-
-    // TODO: figure out when to set this value to false
     bool use_drivetrain = false;
 
     Time delta_time = 10.0_msec;
@@ -61,40 +58,20 @@ class OdometryModel : public LocalizationModel {
       MotorGroupTracking* right_tracker,
       std::initializer_list<HorizontalOdometryTracker*> horizontal_trackers,
       std::initializer_list<VerticalOdometryTracker*> vertical_trackers,
-      pros::Imu* imu)
+      pros::Imu* imu,
+      bool use_drivetrain = false)
         : left_tracker(left_tracker),
           right_tracker(right_tracker),
           horizontal_trackers(horizontal_trackers),
           vertical_trackers(vertical_trackers),
-          imu(imu) {}
+          imu(imu),
+          use_drivetrain(use_drivetrain) {}
 
     /**
      * @brief Should be called once to initialize the model
      */
     void init() override {
-        imu->set_heading(0);
-
-        last_imu_angle = 0;
-        // last_set_orientation = 0;
-
-        double local_y_delta = 0;
-        double local_x_delta = 0;
-
-        double global_y_delta = 0;
-        double global_x_delta = 0;
-
-        double angle_delta = 0;
-
-        // defaults to (0,0)
-        double pose_x = 0;
-        double pose_y = 0;
-        double angle = 0;
-
-        double last_pose_x = 0;
-        double last_pose_y = 0;
-        double last_angle = 0;
-
-        double distance_traveled = 0;
+        imu->set_rotation(0);
 
         left_tracker->init();
         right_tracker->init();

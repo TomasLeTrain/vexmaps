@@ -2,10 +2,10 @@
 
 #include "units/Angle.hpp"
 #include "units/Pose.hpp"
+#include "units/Vector2D.hpp"
 #include "units/units.hpp"
 #include "vexmaps/localization_model.hpp"
 #include "vexmaps/mcl/config.hpp"
-#include "vexmaps/mcl/point.hpp"
 #include "vexmaps/mcl/utils.hpp"
 #include "vexmath/fast_prng/Xoroshiro128plus_vectorized.hpp"
 #include "vexmath/functions/trig_taylor.hpp"
@@ -35,7 +35,7 @@ class BasePfMotionModel : public LocalizationModel {
     /**
      * @brief Returns a noisy global delta
      */
-    virtual Point noisyGlobalDelta() = 0;
+    virtual units::V2Position noisyGlobalDelta() = 0;
     /**
      * @brief Called by the particle filter to update the lost iteration count
      */
@@ -277,7 +277,7 @@ class PfMotionModel : public BasePfMotionModel {
      *
      * @return Noisy global delta
      */
-    Point noisyGlobalDelta() override {
+    units::V2Position noisyGlobalDelta() override {
         const Length vertical_noise = average_distance_distribution(rng) * m;
         const Length horizontal_noise = drift_distribution(rng) * m;
         const float angle_noise = angle_distribution(rng);

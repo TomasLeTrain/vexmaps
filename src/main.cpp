@@ -1,23 +1,38 @@
 #include "main.h"
+
 #include "pros/abstract_motor.hpp"
 #include "pros/apix.h"
 #include "pros/misc.h"
+
 #include "units/units.hpp"
-#include "vexmaps/mcl/config.hpp"
-#include "vexmaps/mcl/distance_model.hpp"
-#include "vexmaps/mcl/pf_motion_model.hpp"
-#include "vexmaps/odometry/odometry.hpp"
-#include "vexmaps/odometry/tracking_wheel.hpp"
-#include "vexmaps/particle_filter_model.hpp"
-#include "vexmaps/smoother_model.hpp"
+#include "vexmaps/api.hpp"
+
 #include <initializer_list>
 
-vexmaps::MotionModelConfig motion_model_config;
+vexmaps::MotionModelConfig motion_model_config = {
+    .forwards_noise = 1_in,
+    .angle_noise = 0.5,
+    .drift_noise = 1_in,
+};
 vexmaps::PFConfiguration Pfconfig = { .logging = false,
-                                      .particle_logging = true};
+                                      .particle_logging = false};
+
+
+struct CustomDistanceSensorConfiguration {
+    // all floats without units are in meters
+    static constexpr double exp_l = 1.5;
+    static constexpr double std_deviation = (2_in).internal();
+
+    // all these should add to one
+    static constexpr double randomCoeff = 0.175;
+    static constexpr double expCoeff = 0.3;
+    static constexpr double normalCoeff = 0.525;
+
+    static constexpr bool logging = false;
+};
 
 // Inertial Sensor on port 8
-pros::Imu imu(13);
+vexmaps::ScaledIMU imu(13, 363.0/360.0);
 
 using horizontalTrackers =
   std::initializer_list<vexmaps::HorizontalOdometryTracker*>;
@@ -77,9 +92,11 @@ pros::Distance front_sensor(20);
 pros::MotorGroup leftMotors({ frontLeft.get_port(),
                               middleLeft.get_port(),
                               backLeft.get_port() }); // left motor group
+                                                      //
 pros::MotorGroup rightMotors({ frontRight.get_port(),
                                middleRight.get_port(),
                                backRight.get_port() }); // right motor group
+                                                        //
 pros::MotorGroup liftMotors({ Lift.get_port(), Lift2.get_port() });
 
 // vertical tracking wheel in port 7, reversed direction
@@ -100,13 +117,10 @@ vexmaps::MotorGroupTracking
 vexmaps::HorizontalOdometryTracker horizontal1(&horizontalEnc,
                                                odom_wheel_diameter,
                                                1,
-                                               // 1.125_in);
                                                0.7_in);
 vexmaps::VerticalOdometryTracker vertical1(&verticalEnc,
                                            odom_wheel_diameter,
                                            1,
-                                           // 0.375_in);
-                                           // 0.4_in);
                                            0.525_in);
 
 vexmaps::PfMotionModel<vexmaps::OdometryModel>
@@ -115,18 +129,19 @@ vexmaps::PfMotionModel<vexmaps::OdometryModel>
                   &right_dt_tracker,
                   horizontalTrackers { &horizontal1 },
                   verticalTrackers { &vertical1 },
-                  &imu);
+                  &imu,
+                  false);
 
-vexmaps::DistanceSensorModel<vexmaps::DistanceSensorConfiguration>
+vexmaps::DistanceSensorModel<CustomDistanceSensorConfiguration>
   front_laser_model(&front_sensor, { 5.25_in, 5.4375_in, 0_stDeg }, "front");
-vexmaps::DistanceSensorModel<vexmaps::DistanceSensorConfiguration>
+vexmaps::DistanceSensorModel<CustomDistanceSensorConfiguration>
   left_laser_model(&left_sensor, { 3_in, 5.25_in, 90_stDeg }, "left");
-vexmaps::DistanceSensorModel<vexmaps::DistanceSensorConfiguration>
+vexmaps::DistanceSensorModel<CustomDistanceSensorConfiguration>
   back_laser_model(&back_sensor, { -4_in, -1.84375_in, 180_stDeg }, "back");
-vexmaps::DistanceSensorModel<vexmaps::DistanceSensorConfiguration>
+vexmaps::DistanceSensorModel<CustomDistanceSensorConfiguration>
   right_laser_model(&right_sensor, { 4.25_in, -5.375_in, 270_stDeg }, "right");
 
-vexmaps::ParticleFilterModel<32768> pf_model(&pf_motion_model,
+vexmaps::ParticleFilterModel<16384> pf_model(&pf_motion_model,
                                            { &front_laser_model,
                                              &left_laser_model,
                                              &back_laser_model,

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "units/units.hpp"
-#include "vexmaps/mcl/point.hpp"
+#include "units/Pose.hpp"
 #include "vexmath/entropy.hpp"
 #include <arm_neon.h>
 #include <cmath>
@@ -14,6 +14,15 @@ constexpr Length wall_length = 1.78308_m;
 inline RobotEntropy<uint32_t> robot_rng;
 
 inline std::ranlux24_base rng(robot_rng());
+
+inline units::Pose rotatePose(const units::Pose& point, const Angle& angle) {
+    const float sina = units::sin(angle).internal();
+    const float cosa = units::cos(angle).internal();
+
+    return { point.x * cosa - point.y * sina,
+             point.y * cosa + point.x * sina,
+             point.orientation };
+}
 
 template<double std_dev = 1.0, double multiplier = 1.0>
 inline float NormalDistributionApproximation(const float x) {

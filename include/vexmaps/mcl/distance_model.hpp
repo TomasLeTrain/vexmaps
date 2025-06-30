@@ -2,9 +2,10 @@
 
 #include "pros/distance.hpp"
 #include "units/Angle.hpp"
+#include "units/Pose.hpp"
+#include "units/Vector2D.hpp"
 #include "units/units.hpp"
 #include "vexmaps/mcl/config.hpp"
-#include "vexmaps/mcl/point.hpp"
 #include "vexmaps/mcl/sensor.hpp"
 #include "vexmaps/mcl/utils.hpp"
 #include <arm_neon.h>
@@ -31,8 +32,6 @@ class DistanceSensorModel : public Sensor {
 
     static constexpr double randomFactor =
       DistanceSensorConfig::randomCoeff * randomUniformProbability;
-    static constexpr double normalFactor =
-      DistanceSensorConfig::normalCoeff / DistanceSensorConfig::std_deviation;
 
     // precomputed values
 
@@ -164,7 +163,7 @@ class DistanceSensorModel : public Sensor {
         return false;
     }
 
-    inline float evaluate(const Point& point) override {
+    inline float evaluate(const units::V2Position& point) override {
         return evaluate(point.x, point.y);
     }
 
@@ -241,7 +240,7 @@ class DistanceSensorModel : public Sensor {
 
     ~DistanceSensorModel() override = default;
 
-    std::optional<Point> getExpected() override {
+    std::optional<units::V2Position> getExpected() override {
         return std::nullopt;
     }
 
