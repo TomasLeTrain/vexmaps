@@ -24,9 +24,9 @@ struct CustomDistanceSensorConfiguration {
     static constexpr double std_deviation = (2_in).internal();
 
     // all these should add to one
-    static constexpr double randomCoeff = 0.175;
-    static constexpr double expCoeff = 0.3;
-    static constexpr double normalCoeff = 0.525;
+    static constexpr double randomCoeff = 0.15;
+    static constexpr double expCoeff = 0.225;
+    static constexpr double normalCoeff = 0.625;
 
     static constexpr bool logging = false;
 };

@@ -131,14 +131,16 @@ class DistanceSensorModel : public Sensor {
         // should actually be applied per particle but would be really
         // computationally expensive
         // only computing it for measured distance should still work fine
-        float expNormalizationFactor =
-          expNormalizationFactor<DistanceSensorConfig::exp_l>(
-            measured_distance.internal());
+        // float expNormFactor =
+        //   expNormalizationFactor<DistanceSensorConfig::exp_l>(
+        //     measured_distance.internal());
+
+        float expNormFactor = 1;
 
         // constant in relation to all particles
         // (only depends on measured distance)
         expFactor =
-          expNormalizationFactor * expVal * DistanceSensorConfig::expCoeff +
+          expNormFactor * expVal * DistanceSensorConfig::expCoeff +
           randomFactor;
 
         if (DistanceSensorConfig::logging) {
