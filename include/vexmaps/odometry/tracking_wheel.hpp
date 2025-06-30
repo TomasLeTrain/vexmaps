@@ -60,7 +60,7 @@ class MotorGroupTracking : public TrackingWheel {
         last_distance = 0.0;
 
         for (double& position : motors->get_position_all()) {
-            last_distance += position * (diameter * M_PI) / gear_ratio;
+            last_distance += position * (diameter * M_PI) * gear_ratio;
         }
 
         last_distance /= static_cast<double>(motors->size());
@@ -70,7 +70,7 @@ class MotorGroupTracking : public TrackingWheel {
         double current_distance = 0.0;
 
         for (double& position : motors->get_position_all()) {
-            current_distance += position * diameter / gear_ratio;
+            current_distance += position * (diameter * M_PI) * gear_ratio;
         }
 
         current_distance /= static_cast<double>(motors->size());

@@ -25,8 +25,8 @@ struct CustomDistanceSensorConfiguration {
 
     // all these should add to one
     static constexpr double randomCoeff = 0.15;
-    static constexpr double expCoeff = 0.225;
-    static constexpr double normalCoeff = 0.625;
+    static constexpr double expCoeff = 0.1;
+    static constexpr double normalCoeff = 0.75;
 
     static constexpr bool logging = false;
 };
@@ -91,11 +91,17 @@ pros::Distance front_sensor(20);
 // motor groups
 pros::MotorGroup leftMotors({ frontLeft.get_port(),
                               middleLeft.get_port(),
-                              backLeft.get_port() }); // left motor group
+                              backLeft.get_port() },
+                            pros::v5::MotorGears::blue,
+                            pros::v5::MotorUnits::rotations
+                              ); // left motor group
                                                       //
 pros::MotorGroup rightMotors({ frontRight.get_port(),
                                middleRight.get_port(),
-                               backRight.get_port() }); // right motor group
+                               backRight.get_port() },
+                                pros::v5::MotorGears::blue,
+                                pros::v5::MotorUnits::rotations
+                               ); // right motor group
                                                         //
 pros::MotorGroup liftMotors({ Lift.get_port(), Lift2.get_port() });
 
@@ -103,11 +109,16 @@ pros::MotorGroup liftMotors({ Lift.get_port(), Lift2.get_port() });
 pros::Rotation verticalEnc(-7);
 pros::Rotation horizontalEnc(-12);
 
-double dt_gear_ratio = (60.0 / 48.0);
-Length dt_diameter = 2.75_in;
-Length track_width = 10.5_in; // inches
+// wheel gear / motor gear
+double target_rpm = 480;
+double initial_rpm = 600;
 
-Length odom_wheel_diameter = 1.995_in; // inches
+double dt_gear_ratio = (target_rpm / initial_rpm);
+
+Length dt_diameter = 2.75_in;
+Length track_width = 10.5_in;
+
+Length odom_wheel_diameter = 1.995_in;
 
 vexmaps::MotorGroupTracking
   left_dt_tracker(&leftMotors, dt_diameter, dt_gear_ratio, -(track_width) / 2);
@@ -127,10 +138,12 @@ vexmaps::PfMotionModel<vexmaps::OdometryModel>
   pf_motion_model(motion_model_config,
                   &left_dt_tracker,
                   &right_dt_tracker,
-                  horizontalTrackers { &horizontal1 },
-                  verticalTrackers { &vertical1 },
+                  // horizontalTrackers { &horizontal1 },
+                  // verticalTrackers { &vertical1 },
+                  horizontalTrackers{},
+                  verticalTrackers{},
                   &imu,
-                  false);
+                  true);
 
 vexmaps::DistanceSensorModel<CustomDistanceSensorConfiguration>
   front_laser_model(&front_sensor, { 5.25_in, 5.4375_in, 0_stDeg }, "front");
