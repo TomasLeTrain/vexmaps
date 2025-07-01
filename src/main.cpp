@@ -9,13 +9,16 @@
 
 #include <initializer_list>
 
+constexpr size_t particle_count = 500;
+// 16384
+
 vexmaps::MotionModelConfig motion_model_config = {
     .forwards_noise = 1_in,
-    .angle_noise = 0.5,
+    .angle_noise = 2.0,
     .drift_noise = 1_in,
 };
-vexmaps::PFConfiguration Pfconfig = { .logging = false,
-                                      .particle_logging = false};
+vexmaps::PFConfiguration Pfconfig = { .logging = true,
+                                      .particle_logging = true};
 
 
 struct CustomDistanceSensorConfiguration {
@@ -28,7 +31,7 @@ struct CustomDistanceSensorConfiguration {
     static constexpr double expCoeff = 0.1;
     static constexpr double normalCoeff = 0.75;
 
-    static constexpr bool logging = false;
+    static constexpr bool logging = true;
 };
 
 // Inertial Sensor on port 8
@@ -111,6 +114,7 @@ pros::Rotation horizontalEnc(-12);
 
 // wheel gear / motor gear
 double target_rpm = 480;
+
 double initial_rpm = 600;
 
 double dt_gear_ratio = (target_rpm / initial_rpm);
@@ -154,7 +158,7 @@ vexmaps::DistanceSensorModel<CustomDistanceSensorConfiguration>
 vexmaps::DistanceSensorModel<CustomDistanceSensorConfiguration>
   right_laser_model(&right_sensor, { 4.25_in, -5.375_in, 270_stDeg }, "right");
 
-vexmaps::ParticleFilterModel<16384> pf_model(&pf_motion_model,
+vexmaps::ParticleFilterModel<particle_count> pf_model(&pf_motion_model,
                                            { &front_laser_model,
                                              &left_laser_model,
                                              &back_laser_model,
@@ -259,7 +263,7 @@ void opcontrol() {
     pf_model.setPose({ 48_in, -48_in, 0_stDeg });
     smoother_model.setPose({ 48_in, -48_in, 0_stDeg });
 
-    bool manual_logging = true;
+    bool manual_logging = false;
 
     while (true) {
         if (manual_logging) {

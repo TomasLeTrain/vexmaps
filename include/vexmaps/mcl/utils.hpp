@@ -9,7 +9,7 @@
 
 namespace vexmaps {
 // definition of useful constants
-constexpr Length wall_length = 1.78308_m;
+constexpr Length wall_length = (140.1_in) / 2.0;
 
 inline RobotEntropy<uint32_t> robot_rng;
 
@@ -20,7 +20,7 @@ inline units::Pose rotatePose(const units::Pose& point, const Angle& angle) {
     const float cosa = units::cos(angle).internal();
 
     return { point.x * cosa - point.y * sina,
-             point.y * cosa + point.x * sina,
+             point.x * sina + point.y * cosa,
              point.orientation };
 }
 

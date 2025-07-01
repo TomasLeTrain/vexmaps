@@ -96,22 +96,19 @@ class DistanceSensorModel : public Sensor {
         cosa = units::cos(offset_angle).internal();
         sina = units::sin(offset_angle).internal();
 
-        // make sure they dont equal inf
-        secant = 1.0 / (std::max(std::abs(cosa), 0.0001));
-        cosecant = 1.0 / (std::max(std::abs(sina), 0.0001));
+        double cos_sign = cosa >= 0.0 ? 1.0 : -1.0;
+        double sin_sign = sina >= 0.0 ? 1.0 : -1.0;
 
-        secant *= cosa >= 0.0 ? 1.0 : -1.0; // give right sign
-        cosecant *= sina >= 0.0 ? 1.0 : -1.0; // give right sign
+        // make sure they dont equal inf
+        secant = cos_sign / (std::max(std::abs(cosa), 0.0001));
+        cosecant = sin_sign / (std::max(std::abs(sina), 0.0001));
 
         // we will always compare all particles to two walls
         // one vertical and one horizontal
         // since the walls we check are always the same for both we can cache
         // the x/y value of the wall for each axis
-        horizontal_wall_length = wall_length;
-        vertical_wall_length = wall_length;
-
-        horizontal_wall_length *= cosa >= 0.0 ? 1.0 : -1.0;
-        vertical_wall_length *= sina >= 0.0 ? 1.0 : -1.0;
+        horizontal_wall_length = wall_length * cos_sign;
+        vertical_wall_length = wall_length * sin_sign;
 
         horizontal_wall_length -= rotated_offsets.x;
         vertical_wall_length -= rotated_offsets.y;
@@ -135,13 +132,9 @@ class DistanceSensorModel : public Sensor {
         //   expNormalizationFactor<DistanceSensorConfig::exp_l>(
         //     measured_distance.internal());
 
-        float expNormFactor = 1;
-
         // constant in relation to all particles
         // (only depends on measured distance)
-        expFactor =
-          expNormFactor * expVal * DistanceSensorConfig::expCoeff +
-          randomFactor;
+        expFactor = expVal * DistanceSensorConfig::expCoeff + randomFactor;
 
         if (DistanceSensorConfig::logging) {
             // name:distance,confidence,std,exit,obj_size
@@ -159,10 +152,6 @@ class DistanceSensorModel : public Sensor {
 
     bool getVectorized() override {
         return true;
-    }
-
-    bool getVectorized2() override {
-        return false;
     }
 
     inline float evaluate(const units::V2Position& point) override {
@@ -227,7 +216,7 @@ class DistanceSensorModel : public Sensor {
         float32x4_t difference = vminq_f32(HC, VC);
 
         uint32x4_t modMask = vcgeq_f32(difference, vdupq_n_f32(0.0));
-
+        
         // constantFactor = measured <= expected ? expFactor : randomFactor
         float32x4_t VMaskedConstantFactor =
           vbslq_f32(modMask, vdupq_n_f32(expFactor), vdupq_n_f32(randomFactor));

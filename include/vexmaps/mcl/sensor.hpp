@@ -23,10 +23,6 @@ class Sensor {
      * @brief Enabled if Vevaluate is implemented
      */
     virtual bool getVectorized() = 0;
-    /**
-     * @brief Enabled if Vevaluate2 is implemented
-     */
-    virtual bool getVectorized2() = 0;
 
     virtual ~Sensor() = default;
 };

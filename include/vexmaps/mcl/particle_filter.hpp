@@ -73,6 +73,9 @@ class ParticleFilter {
 
     float ess;
 
+    // ensures all updates work off of the same angle even if its not the latest
+    Angle current_angle = 0_stDeg;
+
     // -- functions called in update -- //
 
     void applyMotionModel() {
@@ -82,6 +85,7 @@ class ParticleFilter {
         auto current_global_delta = motion_model->precompute();
 
         globalPoseDelta = current_global_delta;
+        current_angle = motion_model->getPose().orientation;
 
         appliedMotionModel = true;
 
@@ -122,7 +126,7 @@ class ParticleFilter {
     void updateSensors() {
         // perform the one time updates on the sensors
         for (auto&& sensor : this->sensors) {
-            sensor->update(motion_model->getPose().orientation);
+            sensor->update(current_angle);
         }
     }
 
@@ -227,7 +231,7 @@ class ParticleFilter {
         // weights to 1/N which can significantly shift the prediction
         updatePrediction(weighted_x_sum / weight_sum,
                          weighted_y_sum / weight_sum,
-                         motion_model->getPose().orientation);
+                         current_angle);
     }
 
     // resamples particles using stochastic universal sampling
@@ -429,8 +433,7 @@ class ParticleFilter {
 
         ess = sum_factor / ess;
 
-        if (ess <
-            PFConfig.near_zero_particle_percentage * static_cast<float>(N)) {
+        if (ess < PFConfig.near_zero_particle_percentage) {
             resampling = true;
         }
 
