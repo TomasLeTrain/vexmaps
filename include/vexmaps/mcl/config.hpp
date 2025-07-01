@@ -30,7 +30,9 @@ struct PFConfiguration {
     // threshold for sum of weights before normalization which determines if the
     // iteration is lost this should be tuned so iterations which are clearly
     // lost can be determined and counted so the algorithm can recover
-    float low_weight_sum_threshold = 0;
+    float lost_max_weight_threshold = 0;
+
+    int max_lost_iteration_count = 15;
 
     // weight which is considered to not contribute - its weight is very low
     // used to see number of non contributing particles for resampling
@@ -84,8 +86,8 @@ struct MotionModelConfig {
 
     // relates number of lost iterations to additional noise in the system
     // set to zero to disable lost iterations from applying at all
-    Length lost_iter_to_forwards_noise = 0.1_in;
-    Length lost_iter_to_drift_noise = 0.1_in;
+    Length lost_iter_to_forwards_noise = 0.2_in;
+    Length lost_iter_to_drift_noise = 0.2_in;
     Angle lost_iter_to_angle_noise = 1_stDeg;
 
     // amount of time expected between the process noise being applied
@@ -96,6 +98,7 @@ struct MotionModelConfig {
 
     // percentage by which noise increases for every process_time time period
     // done since doubling the noise values may result in way too much noise
+    // uniform(2 * a, 2 * b) != 2 * uniform(a, b) + uniform(a, b)
     float process_time_noise_factor = 0.5;
 };
 

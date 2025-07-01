@@ -1,25 +1,25 @@
 #include "main.h"
-
 #include "pros/abstract_motor.hpp"
 #include "pros/apix.h"
 #include "pros/misc.h"
-
 #include "units/units.hpp"
 #include "vexmaps/api.hpp"
-
 #include <initializer_list>
 
-constexpr size_t particle_count = 500;
-// 16384
+// constexpr size_t particle_count = 500;
+constexpr size_t particle_count = 16384;
+constexpr bool general_logging = false;
 
 vexmaps::MotionModelConfig motion_model_config = {
     .forwards_noise = 1_in,
     .angle_noise = 2.0,
     .drift_noise = 1_in,
 };
-vexmaps::PFConfiguration Pfconfig = { .logging = true,
-                                      .particle_logging = true};
-
+vexmaps::PFConfiguration Pfconfig = { .logging = general_logging,
+                                      .particle_logging = false,
+                                      .lost_max_weight_threshold = 0.001,
+                                      .near_zero_particle_percentage = 0.75
+};
 
 struct CustomDistanceSensorConfiguration {
     // all floats without units are in meters
@@ -31,11 +31,11 @@ struct CustomDistanceSensorConfiguration {
     static constexpr double expCoeff = 0.1;
     static constexpr double normalCoeff = 0.75;
 
-    static constexpr bool logging = true;
+    static constexpr bool logging = general_logging;
 };
 
 // Inertial Sensor on port 8
-vexmaps::ScaledIMU imu(13, 363.0/360.0);
+vexmaps::ScaledIMU imu(13, 363.0 / 360.0);
 
 using horizontalTrackers =
   std::initializer_list<vexmaps::HorizontalOdometryTracker*>;
@@ -92,20 +92,16 @@ pros::Distance right_sensor(16);
 pros::Distance front_sensor(20);
 
 // motor groups
-pros::MotorGroup leftMotors({ frontLeft.get_port(),
-                              middleLeft.get_port(),
-                              backLeft.get_port() },
-                            pros::v5::MotorGears::blue,
-                            pros::v5::MotorUnits::rotations
-                              ); // left motor group
-                                                      //
-pros::MotorGroup rightMotors({ frontRight.get_port(),
-                               middleRight.get_port(),
-                               backRight.get_port() },
-                                pros::v5::MotorGears::blue,
-                                pros::v5::MotorUnits::rotations
-                               ); // right motor group
-                                                        //
+pros::MotorGroup leftMotors(
+  { frontLeft.get_port(), middleLeft.get_port(), backLeft.get_port() },
+  pros::v5::MotorGears::blue,
+  pros::v5::MotorUnits::rotations); // left motor group
+                                    //
+pros::MotorGroup rightMotors(
+  { frontRight.get_port(), middleRight.get_port(), backRight.get_port() },
+  pros::v5::MotorGears::blue,
+  pros::v5::MotorUnits::rotations); // right motor group
+                                    //
 pros::MotorGroup liftMotors({ Lift.get_port(), Lift2.get_port() });
 
 // vertical tracking wheel in port 7, reversed direction
@@ -129,25 +125,21 @@ vexmaps::MotorGroupTracking
 vexmaps::MotorGroupTracking
   right_dt_tracker(&rightMotors, dt_diameter, dt_gear_ratio, (track_width) / 2);
 
-vexmaps::HorizontalOdometryTracker horizontal1(&horizontalEnc,
-                                               odom_wheel_diameter,
-                                               1,
-                                               0.7_in);
-vexmaps::VerticalOdometryTracker vertical1(&verticalEnc,
-                                           odom_wheel_diameter,
-                                           1,
-                                           0.525_in);
+vexmaps::HorizontalOdometryTracker
+  horizontal1(&horizontalEnc, odom_wheel_diameter, 1, 0.7_in);
+vexmaps::VerticalOdometryTracker
+  vertical1(&verticalEnc, odom_wheel_diameter, 1, 0.525_in);
 
 vexmaps::PfMotionModel<vexmaps::OdometryModel>
   pf_motion_model(motion_model_config,
                   &left_dt_tracker,
                   &right_dt_tracker,
-                  // horizontalTrackers { &horizontal1 },
-                  // verticalTrackers { &vertical1 },
-                  horizontalTrackers{},
-                  verticalTrackers{},
+                  horizontalTrackers { &horizontal1 },
+                  verticalTrackers { &vertical1 },
+                  // horizontalTrackers {},
+                  // verticalTrackers {},
                   &imu,
-                  true);
+                  false);
 
 vexmaps::DistanceSensorModel<CustomDistanceSensorConfiguration>
   front_laser_model(&front_sensor, { 5.25_in, 5.4375_in, 0_stDeg }, "front");
@@ -159,11 +151,11 @@ vexmaps::DistanceSensorModel<CustomDistanceSensorConfiguration>
   right_laser_model(&right_sensor, { 4.25_in, -5.375_in, 270_stDeg }, "right");
 
 vexmaps::ParticleFilterModel<particle_count> pf_model(&pf_motion_model,
-                                           { &front_laser_model,
-                                             &left_laser_model,
-                                             &back_laser_model,
-                                             &right_laser_model },
-                                           Pfconfig);
+                                                      { &front_laser_model,
+                                                        &left_laser_model,
+                                                        &back_laser_model,
+                                                        &right_laser_model },
+                                                      Pfconfig);
 
 vexmaps::SmootherModel
   smoother_model(&pf_motion_model, &pf_model, SmootherConfig());
@@ -254,8 +246,9 @@ void opcontrol() {
         while (true) {
             uint32_t current_time = pros::millis();
             smoother_model.update();
-            pros::c::task_delay_until(&current_time,
-                                      to_msec(smoother_model.getTaskDeltaTime()));
+            pros::c::task_delay_until(
+              &current_time,
+              to_msec(smoother_model.getTaskDeltaTime()));
         }
     } };
 
@@ -263,7 +256,7 @@ void opcontrol() {
     pf_model.setPose({ 48_in, -48_in, 0_stDeg });
     smoother_model.setPose({ 48_in, -48_in, 0_stDeg });
 
-    bool manual_logging = false;
+    bool manual_logging = true;
 
     while (true) {
         if (manual_logging) {
@@ -283,8 +276,8 @@ void opcontrol() {
                    smoother_model.getPose().y.convert(in),
                    10.0);
 
-            printf(
-              "end particles\ntotal weight: 0, time taken: 30000, timestamp: 0\n");
+            printf("end particles\ntotal weight: 0, time taken: 30000, "
+                   "timestamp: 0\n");
             printf("things done:1,1,0\n");
             printf("prediction:%.1f,%.1f,%.1f\n",
                    smoother_model.getPose().x.convert(in),

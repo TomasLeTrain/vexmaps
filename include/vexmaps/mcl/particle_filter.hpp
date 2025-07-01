@@ -264,16 +264,18 @@ class ParticleFilter {
 
     void updateLostIterationCount() {
         if (active_sensors >= 2) {
-            if (max_unnormalized_weight <= PFConfig.low_weight_sum_threshold) {
+            if (max_unnormalized_weight < PFConfig.lost_max_weight_threshold) {
                 // none of the particles are likely at all, meaning we have no
                 // clue where the robot could be
                 lost_iteration_count++;
+                lost_iteration_count = std::min(lost_iteration_count, PFConfig.max_lost_iteration_count);
 
-                printf(
-                  "No particles are likely: max is: %f, threshold is: " "%f\n, " "lost " "iterat" "ion " "count " "now: " "%d",
-                  total_weight,
-                  PFConfig.low_weight_sum_threshold,
-                  lost_iteration_count);
+                // printf(
+                //   "No particles are likely: max is: %f, threshold is: " "%f\n, " "lost " "iterat" "ion " "count " "now: " "%d",
+                //   total_weight,
+                //   PFConfig.lost_max_weight_threshold,
+                //   lost_iteration_count);
+                //
             } else {
                 // we are not lost this iteration
                 // (and we have enough sensors to accurately determine this),
