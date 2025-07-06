@@ -6,8 +6,8 @@
 #include "vexmaps/api.hpp"
 #include <initializer_list>
 
-// constexpr size_t particle_count = 500;
-constexpr size_t particle_count = 16384;
+constexpr size_t particle_count = 500;
+// constexpr size_t particle_count = 16384;
 constexpr bool general_logging = false;
 
 vexmaps::MotionModelConfig motion_model_config = {
@@ -167,7 +167,7 @@ vexmaps::SmootherModel
  * to keep execution time for this mode under a few seconds.
  */
 void initialize() {
-    // pros::c::serctl(SERCTL_DISABLE_COBS,NULL);
+    pros::c::serctl(SERCTL_DISABLE_COBS,NULL);
     // reset the imu
     imu.reset(true);
 }
@@ -260,6 +260,7 @@ void opcontrol() {
 
     while (true) {
         if (manual_logging) {
+            int start_time = pros::millis();
             printf(
               "start generation\nstart distances\nend distances\nstart " "parti" "cles" "\n");
 
@@ -277,7 +278,7 @@ void opcontrol() {
                    10.0);
 
             printf("end particles\ntotal weight: 0, time taken: 30000, "
-                   "timestamp: 0\n");
+                   "timestamp: %d\n",start_time);
             printf("things done:1,1,0\n");
             printf("prediction:%.1f,%.1f,%.1f\n",
                    smoother_model.getPose().x.convert(in),
@@ -293,6 +294,6 @@ void opcontrol() {
           ANALOG_RIGHT_X); // Gets the turn left/right from right joystick
         leftMotors.move(dir + turn); // Sets left motor voltage
         rightMotors.move(dir - turn); // Sets right motor voltage
-        pros::delay(30); // Run for 20 ms then update
+        pros::delay(20); // Run for 20 ms then update
     }
 }
