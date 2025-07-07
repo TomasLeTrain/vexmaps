@@ -7,7 +7,7 @@
 #include "vexmaps/localization_model.hpp"
 #include "vexmaps/mcl/config.hpp"
 #include "vexmaps/mcl/utils.hpp"
-#include "vexmath/fast_prng/Xoroshiro128plus_vectorized.hpp"
+#include "vexmath/fast_prng/Xoshiro128plus_vectorized.hpp"
 #include "vexmath/functions/trig_taylor.hpp"
 #include "vexmath/functions/vectorized_trig_taylor.hpp"
 #include <arm_neon.h>

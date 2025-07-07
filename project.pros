@@ -614,7 +614,7 @@
                 "version": "0.7.1"
             },
             "vexmath": {
-                "location": "/home/tomass/.config/pros/templates/vexmath@0.0.4",
+                "location": "/home/tomass/.config/pros/templates/vexmath@0.0.5",
                 "metadata": {
                     "origin": "local"
                 },
@@ -622,24 +622,24 @@
                 "py/object": "pros.conductor.templates.local_template.LocalTemplate",
                 "supported_kernels": "^4.2.0",
                 "system_files": [
-                    "include/vexmath/fast_prng/Xoroshiro128plus_vectorized.hpp",
-                    "include/vexmath/ziggurat/exponential.hpp",
+                    "include/vexmath/fast_prng/SplitMix64.hpp",
+                    "include/vexmath/fast_prng/Xoshiro128plus_vectorized.hpp",
                     "include/vexmath/ziggurat/normal.hpp",
-                    "include/vexmath/functions/trig_taylor.hpp",
-                    "include/vexmath/fast_prng/SplitMix32.hpp",
-                    "include/vexmath/functions/vectorized_sqrt.hpp",
-                    "include/vexmath/entropy.hpp",
                     "include/vexmath/functions/vectorized_trig_taylor.hpp",
-                    "include/vexmath/ziggurat/shared.hpp",
-                    "include/vexmath/fast_prng/Xoroshiro128plus.hpp",
+                    "include/vexmath/functions/vectorized_exp_log.hpp",
+                    "include/vexmath/fast_prng/Xoshiro128plus.hpp",
+                    "include/vexmath/ziggurat/exponential.hpp",
+                    "include/vexmath/functions/vectorized_sqrt.hpp",
                     "include/vexmath/functions/vectorized_trig.hpp",
                     "firmware/vexmath.a",
-                    "include/vexmath/functions/vectorized_exp_log.hpp",
-                    "include/vexmath/fast_prng/SplitMix64.hpp"
+                    "include/vexmath/entropy.hpp",
+                    "include/vexmath/functions/trig_taylor.hpp",
+                    "include/vexmath/fast_prng/SplitMix32.hpp",
+                    "include/vexmath/ziggurat/shared.hpp"
                 ],
                 "target": "v5",
                 "user_files": [],
-                "version": "0.0.4"
+                "version": "0.0.5"
             }
         },
         "upload_options": {},
