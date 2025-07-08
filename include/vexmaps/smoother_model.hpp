@@ -4,6 +4,7 @@
 #include "units/Vector2D.hpp"
 #include "vexmaps/localization_model.hpp"
 
+namespace vexmaps {
 struct SmootherConfig {
     // for all parameters:
     // 0 = all model
@@ -25,7 +26,6 @@ struct SmootherConfig {
     double beta_vtheta = 0.9;
 };
 
-namespace vexmaps {
 class SmootherModel : public LocalizationModel {
   private:
     Length distance_traveled = 0_m;
@@ -73,7 +73,8 @@ class SmootherModel : public LocalizationModel {
         latest_delta_time = current_timestamp - latest_timestamp;
         latest_timestamp = current_timestamp;
 
-        // TODO: actually only get the global updates instead of all updates from pf or else its likely bad
+        // TODO: actually only get the global updates instead of all updates
+        // from pf or else its likely bad
 
         Time delta_time = latest_delta_time;
 
@@ -119,25 +120,25 @@ class SmootherModel : public LocalizationModel {
             velocity_estimate.orientation =
               velocity_estimate.orientation +
               config.beta_vtheta * (pose_delta_measurement.orientation /
-                               local_delta_measurement_delta_time -
-                             velocity_estimate.orientation);
+                                      local_delta_measurement_delta_time -
+                                    velocity_estimate.orientation);
 
             // update pose estimate as well
             pose_estimate.x =
-              pose_estimate.x +
-              config.beta_x * ((pose_delta_measurement.x + previous_pose_estimate.x) -
-                        pose_estimate.x);
+              pose_estimate.x + config.beta_x * ((pose_delta_measurement.x +
+                                                  previous_pose_estimate.x) -
+                                                 pose_estimate.x);
 
             pose_estimate.y =
-              pose_estimate.y +
-              config.beta_y * ((pose_delta_measurement.y + previous_pose_estimate.y) -
-                        pose_estimate.y);
+              pose_estimate.y + config.beta_y * ((pose_delta_measurement.y +
+                                                  previous_pose_estimate.y) -
+                                                 pose_estimate.y);
 
             pose_estimate.orientation =
               pose_estimate.orientation +
               config.beta_theta * ((pose_delta_measurement.orientation +
-                             previous_pose_estimate.orientation) -
-                            pose_estimate.orientation);
+                                    previous_pose_estimate.orientation) -
+                                   pose_estimate.orientation);
 
             last_local_delta_timestamp = current_local_delta_timestamp;
         }
@@ -147,17 +148,18 @@ class SmootherModel : public LocalizationModel {
 
             units::Pose pose_measurement = pose_model->getPose();
 
-            pose_estimate.x = pose_estimate.x +
-                              config.alpha_x * (pose_measurement.x - pose_estimate.x);
+            pose_estimate.x =
+              pose_estimate.x +
+              config.alpha_x * (pose_measurement.x - pose_estimate.x);
 
-            pose_estimate.y = pose_estimate.y +
-                              config.alpha_y * (pose_measurement.y - pose_estimate.y);
+            pose_estimate.y =
+              pose_estimate.y +
+              config.alpha_y * (pose_measurement.y - pose_estimate.y);
 
             pose_estimate.orientation =
               pose_estimate.orientation +
               config.alpha_theta *
                 (pose_measurement.orientation - pose_estimate.orientation);
-
 
             last_pose_timestamp = current_pose_timestamp;
         }

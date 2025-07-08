@@ -122,9 +122,9 @@ Length track_width = 10.5_in;
 Length odom_wheel_diameter = 1.995_in;
 
 vexmaps::MotorGroupTracking
-  left_dt_tracker(&leftMotors, dt_diameter, dt_gear_ratio, -(track_width) / 2);
+  left_dt_tracker(&leftMotors, dt_diameter, dt_gear_ratio, (track_width) / 2);
 vexmaps::MotorGroupTracking
-  right_dt_tracker(&rightMotors, dt_diameter, dt_gear_ratio, (track_width) / 2);
+  right_dt_tracker(&rightMotors, dt_diameter, dt_gear_ratio, -(track_width) / 2);
 
 vexmaps::HorizontalOdometryTracker
   horizontal1(&horizontalEnc, odom_wheel_diameter, 1, 0.7_in);
