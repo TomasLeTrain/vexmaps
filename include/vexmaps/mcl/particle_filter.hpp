@@ -292,10 +292,12 @@ class ParticleFilter {
                    total_weight,
                    pros::micros() - start_time);
             printf("%d\n", pros::millis());
-            printf("things done:%d,%d,%d\n",
+            printf("things done:%d,%d,%d,%d\n",
                    this->appliedMotionModel,
                    this->weightedParticles,
-                   this->appliedResampling);
+                   this->appliedResampling,
+                   N
+                   );
             printf("prediction:%f,%f,%f\n",
                    this->prediction.x.convert(in),
                    this->prediction.y.convert(in),

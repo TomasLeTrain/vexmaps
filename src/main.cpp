@@ -6,9 +6,9 @@
 #include "vexmaps/api.hpp"
 #include <initializer_list>
 
-constexpr size_t particle_count = 500;
-// constexpr size_t particle_count = 16384;
-constexpr bool general_logging = false;
+// constexpr size_t particle_count = 16000;
+constexpr size_t particle_count = 30000;
+constexpr bool general_logging = true;
 
 vexmaps::MotionModelConfig motion_model_config = {
     .forwards_noise = 1_in,
@@ -32,6 +32,7 @@ struct CustomDistanceSensorConfiguration {
     static constexpr double normalCoeff = 0.75;
 
     static constexpr bool logging = general_logging;
+    // static constexpr bool logging = false;
 };
 
 // Inertial Sensor on port 8
@@ -167,7 +168,7 @@ vexmaps::SmootherModel
  * to keep execution time for this mode under a few seconds.
  */
 void initialize() {
-    pros::c::serctl(SERCTL_DISABLE_COBS,NULL);
+    // pros::c::serctl(SERCTL_DISABLE_COBS,NULL);
     // reset the imu
     imu.reset(true);
 }
@@ -256,7 +257,7 @@ void opcontrol() {
     pf_model.setPose({ 48_in, -48_in, 0_stDeg });
     smoother_model.setPose({ 48_in, -48_in, 0_stDeg });
 
-    bool manual_logging = true;
+    bool manual_logging = false;
 
     while (true) {
         if (manual_logging) {
