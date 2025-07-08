@@ -113,17 +113,23 @@ class OdometryModel : public LocalizationModel {
 
         double current_imu_angle = last_imu_angle;
 
-        if (std::isfinite(imu->get_rotation())) {
-            current_imu_angle = imu->get_rotation() * (M_PI / 180.0);
-        } else {
-            printf("WARNING: IMU NOT FINITE\n");
+        if(imu == nullptr){
+            printf("WARNING: IMU IS NULL - Check config for a nullptr!\n");
             current_imu_angle = last_imu_angle;
-            // return;
+        }else if(!imu->is_installed()){
+            printf("WARNING: IMU NOT DETECTED - Check cable connection or port!\n");
+            current_imu_angle = last_imu_angle;
+        }else{
+            // imu is installed
+            if (std::isfinite(imu->get_rotation())) {
+                current_imu_angle = imu->get_rotation() * (M_PI / 180.0);
+            } else {
+                printf("WARNING: IMU NOT FINITE - Might not be calibrated or did not calibrate properly!\n");
+                current_imu_angle = last_imu_angle;
+            }
         }
 
-        // printf("current_imu_angle: %f\n",current_imu_angle);
         double imu_angle_delta = current_imu_angle - last_imu_angle;
-        // printf("imu_delta: %f\n",imu_angle_delta);
 
         // makes it so that we dont have to deal with compass -> std rad
         // conversion
@@ -133,15 +139,14 @@ class OdometryModel : public LocalizationModel {
             angle_delta = 0;
         }
 
+        // update angle
         angle = angle_delta + last_angle;
-        // angle = last_set_orientation - current_imu_angle;
 
         local_y_delta = 0;
         local_x_delta = 0;
 
         double x_tracker_count = 0;
         double y_tracker_count = 0;
-        // printf("angle_delta: %f\n",angle_delta);
 
         // clang-format off
         if (fabs(angle_delta) < 1e-6) {
@@ -149,7 +154,6 @@ class OdometryModel : public LocalizationModel {
                 local_x_delta += (left_tracker->getDeltaDistance() + left_tracker->getDeltaDistance()) / 2.0;
                 x_tracker_count += 1.0;
             }
-            // printf("local_y_delta so far1: %f\n",local_y_delta);
 
             for (auto&& tracker : vertical_trackers) {
                 if(tracker->getAvailable()){
@@ -166,7 +170,6 @@ class OdometryModel : public LocalizationModel {
             }
         } else {
             double sin_multiplier = 2.0 * sin(angle_delta / 2.0);
-            // printf("multiplier: %f\n",sin_multiplier);
 
             if (drivetrain_enabled) {
                 double local_x_left_delta = sin_multiplier * (left_tracker->getDeltaDistance() / angle_delta + left_tracker->getOffset());
@@ -174,7 +177,6 @@ class OdometryModel : public LocalizationModel {
                 local_x_delta += (local_x_left_delta + local_x_right_delta) / 2.0;
                 x_tracker_count += 1.0;
             }
-            // printf("local_y_delta so far2: %f\n",local_y_delta);
 
             for (auto&& tracker : vertical_trackers) {
                 if(tracker->getAvailable()){
@@ -197,18 +199,14 @@ class OdometryModel : public LocalizationModel {
         if (x_tracker_count > 1) local_x_delta /= x_tracker_count;
         if (y_tracker_count > 1) local_y_delta /= y_tracker_count;
 
-        // printf("local_x/y: %f %f\n",local_x_delta, local_y_delta);
-
         // Update global position using polar coordinates
         double avg_angle = (angle + last_angle) / 2.0;
-        // printf("avg_angle_y: %f %f %f\n",avg_angle,angle,last_angle);
 
         double sina = sin(avg_angle);
         double cosa = cos(avg_angle);
 
         global_x_delta = local_x_delta * cosa - local_y_delta * sina;
         global_y_delta = local_x_delta * sina + local_y_delta * cosa;
-        // printf("global_x/y: %f %f\n",global_x_delta,global_y_delta);
 
         last_pose_x = pose_x;
         last_pose_y = pose_y;
