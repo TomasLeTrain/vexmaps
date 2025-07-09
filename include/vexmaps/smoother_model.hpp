@@ -85,9 +85,13 @@ class SmootherModel : public LocalizationModel {
 
         units::Pose previous_pose_estimate = pose_estimate;
 
+
         // calculate the predictions first using the transition equations:
-        units::Pose pose_prediction =
-          pose_estimate + velocity_estimate * delta_time;
+        units::Pose pose_prediction = units::Pose(
+          (pose_estimate + velocity_estimate * delta_time),
+          pose_estimate.orientation + velocity_estimate.orientation * delta_time
+          );
+
         units::VelocityPose velocity_prediction = velocity_estimate;
 
         // allows multiple sensors to affect the final estimate
@@ -145,7 +149,6 @@ class SmootherModel : public LocalizationModel {
 
         // only correct pose if we have a new pose measurement
         if (current_pose_timestamp != last_pose_timestamp) {
-
             units::Pose pose_measurement = pose_model->getPose();
 
             pose_estimate.x =
@@ -181,6 +184,12 @@ class SmootherModel : public LocalizationModel {
         pose_estimate = new_pose;
         last_pose_estimate = new_pose;
         velocity_estimate = units::VelocityPose();
+
+        // since only the local delta from this is used it isn't really needed,
+        // however to keep consistency its still set
+        local_delta_model->setPose(new_pose);
+
+        pose_model->setPose(new_pose);
     }
 
     units::Pose getPose() override {

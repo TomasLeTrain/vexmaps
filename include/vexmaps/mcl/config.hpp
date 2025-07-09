@@ -30,7 +30,7 @@ struct PFConfiguration {
     // threshold for sum of weights before normalization which determines if the
     // iteration is lost this should be tuned so iterations which are clearly
     // lost can be determined and counted so the algorithm can recover
-    float lost_max_weight_threshold = 0;
+    float lost_max_weight_threshold = 0.001;
 
     int max_lost_iteration_count = 15;
 
@@ -39,7 +39,7 @@ struct PFConfiguration {
     // float near_zero_epsilon = 0.8;
 
     // percentage of particles which have weights near zero to resample
-    float near_zero_particle_percentage = 0.9;
+    float near_zero_particle_percentage = 0.75;
 
     // percentage of the max weight at which a particle is included for the prediction
     // the lower the number the less accurate prediction will be but it might be smoother
@@ -50,7 +50,7 @@ struct PFConfiguration {
 };
 
 struct MotionModelConfig {
-    Length forwards_noise = 0.2_in;
+    Length forwards_noise = 0.4_in;
 
     // relates slip to change in distance
     // higher distance travel usually results in wheel slipage, therefore we use
@@ -68,10 +68,10 @@ struct MotionModelConfig {
     // factor of how much the avg angle change should be applied as noise
     // setting to 1.0 means some particles would move in the direction of the
     // last angle while some would move only in the direction of the new angle
-    float angle_noise = 0.15;
+    float angle_noise = 1.0;
 
     // applies drift to particles
-    Length drift_noise = 0.2_in;
+    Length drift_noise = 0.4_in;
 
     // relation factor between the change in angle and drift
     // big changes in angle plus movement is usually what results in drift
@@ -108,9 +108,9 @@ struct DistanceSensorConfiguration {
     static constexpr double std_deviation = (2_in).internal();
 
     // all these should add to one
-    static constexpr double randomCoeff = 0.175;
-    static constexpr double expCoeff = 0.3;
-    static constexpr double normalCoeff = 0.525;
+    static constexpr double randomCoeff = 0.15;
+    static constexpr double expCoeff = 0.1;
+    static constexpr double normalCoeff = 0.75;
 
     static constexpr bool logging = false;
 };

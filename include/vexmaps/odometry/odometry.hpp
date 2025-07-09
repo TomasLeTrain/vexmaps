@@ -151,7 +151,7 @@ class OdometryModel : public LocalizationModel {
         // clang-format off
         if (fabs(angle_delta) < 1e-6) {
             if (drivetrain_enabled) {
-                local_x_delta += (left_tracker->getDeltaDistance() + left_tracker->getDeltaDistance()) / 2.0;
+                local_x_delta += (left_tracker->getDeltaDistance() + right_tracker->getDeltaDistance()) / 2.0;
                 x_tracker_count += 1.0;
             }
 

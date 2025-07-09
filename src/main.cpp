@@ -6,19 +6,14 @@
 #include "vexmaps/api.hpp"
 #include <initializer_list>
 
-// constexpr size_t particle_count = 16000;
-constexpr size_t particle_count = 30000;
-constexpr bool general_logging = true;
+constexpr size_t particle_count = 16384;
+// constexpr size_t particle_count = 30000;
+constexpr bool general_logging = false;
 
-vexmaps::MotionModelConfig motion_model_config = {
-    .forwards_noise = 1_in,
-    .angle_noise = 2.0,
-    .drift_noise = 1_in,
-};
-vexmaps::PFConfiguration Pfconfig = { .logging = general_logging,
-                                      .particle_logging = false,
-                                      .lost_max_weight_threshold = 0.001,
-                                      .near_zero_particle_percentage = 0.75
+vexmaps::MotionModelConfig motion_model_config = {};
+vexmaps::PFConfiguration Pfconfig = {
+    .logging = general_logging,
+    .particle_logging = false,
 };
 
 struct CustomDistanceSensorConfiguration {
@@ -45,47 +40,10 @@ using verticalTrackers =
 
 pros::Controller master(pros::E_CONTROLLER_MASTER);
 
-pros::Motor frontLeft(
-  -3,
-  pros::v5::MotorGears::blue,
-  pros::v5::MotorUnits::rotations); // left front motor. port 11, reversed
-pros::Motor middleLeft(
-  10,
-  pros::v5::MotorGears::blue,
-  pros::v5::MotorUnits::rotations); // left middle motor. port 12, reversed
-pros::Motor backLeft(
-  -2,
-  pros::v5::MotorGears::blue,
-  pros::v5::MotorUnits::rotations); // left back motor. port 13, reversed
-                                    //
-pros::Motor
-  frontRight(1,
-             pros::v5::MotorGears::blue,
-             pros::v5::MotorUnits::rotations); // right front motor. port 18
-pros::Motor
-  middleRight(-9,
-              pros::v5::MotorGears::blue,
-              pros::v5::MotorUnits::rotations); // right middle motor. port 19
-pros::Motor
-  backRight(4,
-            pros::v5::MotorGears::blue,
-            pros::v5::MotorUnits::rotations); // right back motor. port 21
-                                              //
 pros::Motor
   Intake(15,
          pros::v5::MotorGears::blue,
          pros::v5::MotorUnits::rotations); // intake motor. port 16, reversed
-
-pros::Motor
-  Lift(18, pros::v5::MotorGears::green, pros::v5::MotorUnits::rotations);
-pros::Motor
-  Lift2(-19, pros::v5::MotorGears::green, pros::v5::MotorUnits::rotations);
-
-pros::Distance mogo_sensor(4);
-
-pros::Optical optical_sensor(17);
-pros::adi::DigitalIn sensor('C');
-pros::adi::DigitalIn descoreLimit('A');
 
 pros::Distance left_sensor(6);
 pros::Distance back_sensor(5);
@@ -93,23 +51,19 @@ pros::Distance right_sensor(16);
 pros::Distance front_sensor(20);
 
 // motor groups
-pros::MotorGroup leftMotors(
-  { frontLeft.get_port(), middleLeft.get_port(), backLeft.get_port() },
-  pros::v5::MotorGears::blue,
-  pros::v5::MotorUnits::rotations); // left motor group
-                                    //
-pros::MotorGroup rightMotors(
-  { frontRight.get_port(), middleRight.get_port(), backRight.get_port() },
-  pros::v5::MotorGears::blue,
-  pros::v5::MotorUnits::rotations); // right motor group
-                                    //
-pros::MotorGroup liftMotors({ Lift.get_port(), Lift2.get_port() });
+pros::MotorGroup
+  leftMotors({ -3, 10, -2 },
+             pros::v5::MotorGears::blue,
+             pros::v5::MotorUnits::rotations); // left motor group
+pros::MotorGroup
+  rightMotors({ 1, -9, 4 },
+              pros::v5::MotorGears::blue,
+              pros::v5::MotorUnits::rotations); // right motor group
 
 // vertical tracking wheel in port 7, reversed direction
 pros::Rotation verticalEnc(-7);
 pros::Rotation horizontalEnc(-12);
 
-// wheel gear / motor gear
 double target_rpm = 480;
 
 Length dt_diameter = 2.75_in;
@@ -155,7 +109,7 @@ vexmaps::ParticleFilterModel<particle_count> pf_model(&pf_motion_model,
                                                       Pfconfig);
 
 vexmaps::SmootherModel
-  smoother_model(&pf_motion_model, &pf_model, SmootherConfig());
+  smoother_model(&pf_motion_model, &pf_model, vexmaps::SmootherConfig());
 
 /**
  * Runs initialization code. This occurs as soon as the program is started.
@@ -167,59 +121,13 @@ void initialize() {
     // pros::c::serctl(SERCTL_DISABLE_COBS,NULL);
     // reset the imu
     imu.reset(true);
-}
 
-/**
- * Runs while the robot is in the disabled state of Field Management System or
- * the VEX Competition Switch, following either autonomous or opcontrol. When
- * the robot is enabled, this task will exit.
- */
-void disabled() {}
-
-/**
- * Runs after initialize(), and before autonomous when connected to the Field
- * Management System or the VEX Competition Switch. This is intended for
- * competition-specific initialization routines, such as an autonomous selector
- * on the LCD.
- *
- * This task will exit when the robot is enabled and autonomous or opcontrol
- * starts.
- */
-void competition_initialize() {}
-
-/**
- * Runs the user autonomous code. This function will be started in its own task
- * with the default priority and stack size whenever the robot is enabled via
- * the Field Management System or the VEX Competition Switch in the autonomous
- * mode. Alternatively, this function may be called in initialize or opcontrol
- * for non-competition testing purposes.
- *
- * If the robot is disabled or communications is lost, the autonomous task
- * will be stopped. Re-enabling the robot will restart the task, not re-start it
- * from where it left off.
- */
-void autonomous() {}
-
-/**
- * Runs the operator control code. This function will be started in its own task
- * with the default priority and stack size whenever the robot is enabled via
- * the Field Management System or the VEX Competition Switch in the operator
- * control mode.
- *
- * If no competition control is connected, this function will run immediately
- * following initialize().
- *
- * If the robot is disabled or communications is lost, the
- * operator control task will be stopped. Re-enabling the robot will restart the
- * task, not resume it from where it left off.
- */
-void opcontrol() {
-    // initialize both models
+    // initialize all models
     pf_motion_model.init();
     pf_model.init();
     smoother_model.init();
 
-    // create the odom task
+    // initialize tasks
     pros::Task odom_task { [&] {
         while (true) {
             uint32_t current_time = pros::millis();
@@ -248,12 +156,19 @@ void opcontrol() {
               to_msec(smoother_model.getTaskDeltaTime()));
         }
     } };
+}
 
+void disabled() {}
+
+void competition_initialize() {}
+
+void autonomous() {}
+
+void opcontrol(){
     // set the pose
-    pf_model.setPose({ 48_in, -48_in, 0_stDeg });
     smoother_model.setPose({ 48_in, -48_in, 0_stDeg });
 
-    bool manual_logging = false;
+    bool manual_logging = true;
 
     while (true) {
         if (manual_logging) {
@@ -274,14 +189,19 @@ void opcontrol() {
                    smoother_model.getPose().y.convert(in),
                    10.0);
 
-            printf("end particles\ntotal weight: 0, time taken: 30000, "
-                   "timestamp: %d\n",start_time);
-            printf("things done:1,1,0\n");
+            printf(
+              "end particles\ntotal weight: 0, time taken: 30000, " "timestamp:" " %d\n",
+              start_time);
+            printf("things done:1,1,0,%d\n",particle_count);
             printf("prediction:%.1f,%.1f,%.1f\n",
                    smoother_model.getPose().x.convert(in),
                    smoother_model.getPose().y.convert(in),
-                   pf_motion_model.getPose().orientation.convert(deg));
+                   smoother_model.getPose().orientation.convert(deg));
             printf("end generation\n");
+        }
+
+        if(master.get_digital_new_press(pros::E_CONTROLLER_DIGITAL_A)){
+            smoother_model.setPose({ 48_in, -48_in, 90_stDeg });
         }
 
         // // Arcade control scheme

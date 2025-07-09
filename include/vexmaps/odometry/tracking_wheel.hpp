@@ -89,14 +89,18 @@ class MotorGroupTracking : public TrackingWheel {
             return 0.0;
         }
 
+        double used_motor_count = 0;
+
         for (int i = 0; i < motors->size(); i++) {
-            auto port = motors->get_port(i);
+            int port = abs(motors->get_port(i));
             // check if is installed
             auto plugged_device_type =
               (pros::DeviceType)pros::c::registry_get_plugged_type(port - 1);
 
             // only include if plugged in
             if (plugged_device_type == pros::DeviceType::motor) {
+                used_motor_count += 1.0;
+
                 pros::MotorGears gearing = motors->get_gearing(i);
                 pros::MotorUnits encoder = motors->get_encoder_units(i);
 
@@ -120,14 +124,13 @@ class MotorGroupTracking : public TrackingWheel {
 
                 double position = motors->get_position(i);
 
-                double gear_ratio = 1;
-
                 distance += (position * rotation_multiplier) *
                             (diameter * M_PI) * (this->rpm / getGearingRPM(gearing));
             }
         }
 
-        distance /= static_cast<double>(motors->size());
+        if(used_motor_count != 0.0)
+            distance /= used_motor_count;
         return distance;
     }
 
