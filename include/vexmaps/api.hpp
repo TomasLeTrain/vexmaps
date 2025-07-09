@@ -1,3 +1,5 @@
+#pragma once
+
 #include "odometry/api.hpp"
 #include "mcl/api.hpp"
 #include "localization_model.hpp"

@@ -1,3 +1,5 @@
+#pragma once
+
 #include "pros/imu.h"
 #include "pros/imu.hpp"
 #include "pros/rtos.hpp"
