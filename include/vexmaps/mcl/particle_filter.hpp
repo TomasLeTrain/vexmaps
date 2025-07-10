@@ -82,14 +82,12 @@ class ParticleFilter {
         globalPoseDelta = units::Pose(0_m, 0_m, 0_stDeg);
         // applies noise regardless if we have new information or not
         // should be fine since the noise is scaled based on time
-        auto current_global_delta = motion_model->precompute();
+        units::Pose current_global_delta = motion_model->precompute();
 
         globalPoseDelta = current_global_delta;
         current_angle = motion_model->getPose().orientation;
 
         appliedMotionModel = true;
-
-        auto thing = motion_model->noisyGlobalDelta();
 
         if (PFConfig.usingVectorizedMotion) {
 
@@ -203,8 +201,7 @@ class ParticleFilter {
         if (active_sensors <= 1) {
             updatePrediction(getPose().x + globalPoseDelta.x,
                              getPose().y + globalPoseDelta.y,
-                             getPose().orientation +
-                               globalPoseDelta.orientation);
+                             current_angle);
             return;
         }
 
@@ -368,8 +365,7 @@ class ParticleFilter {
             // be zero so it won't matter
             updatePrediction(getPose().x + globalPoseDelta.x,
                              getPose().y + globalPoseDelta.y,
-                             getPose().orientation +
-                               globalPoseDelta.orientation);
+                               current_angle);
             endUpdate();
             return;
         }
@@ -471,6 +467,7 @@ class ParticleFilter {
             weights[i] = average_weight;
         }
         // need to update motion model as well
+        updatePrediction(pose.x,pose.y,pose.orientation);
         motion_model->setPose(pose);
     }
 
@@ -495,6 +492,7 @@ class ParticleFilter {
         const Length avg_y = (max_y + min_y) / 2.0;
 
         // need to update motion model as well
+        updatePrediction(avg_x,avg_y,orientation);
         motion_model->setPose({ avg_x, avg_y, orientation });
     }
 

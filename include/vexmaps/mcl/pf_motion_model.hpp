@@ -153,6 +153,7 @@ class PfMotionModel : public BasePfMotionModel {
         base_motion_model.update();
 
         accumulated_global_delta += base_motion_model.getGlobalPoseDelta();
+        accumulated_global_delta.orientation += base_motion_model.getGlobalPoseDelta().orientation;
 
         // update timestamps
         update_timestamp = from_msec(pros::millis());

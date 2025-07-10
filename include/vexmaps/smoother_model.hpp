@@ -11,19 +11,19 @@ struct SmootherConfig {
     // 1 = all measurement
 
     // // determines how much a pose measurement influences the pose estimate
-    double alpha_x = 0.005;
-    double alpha_y = 0.005;
-    double alpha_theta = 0.005;
+    double alpha_x = 0.015;
+    double alpha_y = 0.015;
+    double alpha_theta = 0.015;
 
     // used by pose_delta_measurement to estimate the pose
-    double beta_x = 0.8;
-    double beta_y = 0.8;
-    double beta_theta = 0.8;
+    double beta_x = 1;
+    double beta_y = 1;
+    double beta_theta = 1;
 
     // determines how much a pose delta measurement influences the velocity
-    double beta_vx = 0.9;
-    double beta_vy = 0.9;
-    double beta_vtheta = 0.9;
+    double beta_vx = 1;
+    double beta_vy = 1;
+    double beta_vtheta = 1;
 };
 
 class SmootherModel : public LocalizationModel {
@@ -39,6 +39,8 @@ class SmootherModel : public LocalizationModel {
     units::Pose last_pose_estimate = units::Pose();
     units::Pose pose_estimate = units::Pose();
     units::VelocityPose velocity_estimate = units::VelocityPose();
+
+    units::Pose last_local_estimate = units::Pose();
 
     // measures the local pose deltas of the robot
     LocalizationModel* local_delta_model;
@@ -98,6 +100,9 @@ class SmootherModel : public LocalizationModel {
         pose_estimate = pose_prediction;
         velocity_estimate = velocity_prediction;
 
+        bool applied_local = false;
+        bool applied_global = false;
+
         // update steps get performed independently
 
         // only correct velocity if we have a new pose measurement
@@ -108,6 +113,7 @@ class SmootherModel : public LocalizationModel {
 
             units::Pose pose_delta_measurement =
               local_delta_model->getGlobalPoseDelta();
+            
 
             velocity_estimate.x =
               velocity_estimate.x +
@@ -130,21 +136,22 @@ class SmootherModel : public LocalizationModel {
             // update pose estimate as well
             pose_estimate.x =
               pose_estimate.x + config.beta_x * ((pose_delta_measurement.x +
-                                                  previous_pose_estimate.x) -
+                                                  last_local_estimate.x) -
                                                  pose_estimate.x);
 
             pose_estimate.y =
               pose_estimate.y + config.beta_y * ((pose_delta_measurement.y +
-                                                  previous_pose_estimate.y) -
+                                                  last_local_estimate.y) -
                                                  pose_estimate.y);
 
             pose_estimate.orientation =
               pose_estimate.orientation +
               config.beta_theta * ((pose_delta_measurement.orientation +
-                                    previous_pose_estimate.orientation) -
+                                    last_local_estimate.orientation) -
                                    pose_estimate.orientation);
 
             last_local_delta_timestamp = current_local_delta_timestamp;
+            applied_local = true;
         }
 
         // only correct pose if we have a new pose measurement
@@ -165,6 +172,7 @@ class SmootherModel : public LocalizationModel {
                 (pose_measurement.orientation - pose_estimate.orientation);
 
             last_pose_timestamp = current_pose_timestamp;
+            applied_global = true;
         }
 
         global_pose_delta = units::Pose(pose_estimate.x - last_pose_estimate.x,
@@ -177,12 +185,17 @@ class SmootherModel : public LocalizationModel {
         Angle avg_angle =
           last_pose_estimate.orientation + global_pose_delta.orientation / 2.0;
 
+        if(applied_local){
+            last_local_estimate = pose_estimate;
+        }
+
         local_pose_delta = localToGlobalDelta(global_pose_delta, avg_angle);
     }
 
     void setPose(units::Pose new_pose) override {
         pose_estimate = new_pose;
         last_pose_estimate = new_pose;
+        last_local_estimate = new_pose;
         velocity_estimate = units::VelocityPose();
 
         // since only the local delta from this is used it isn't really needed,
