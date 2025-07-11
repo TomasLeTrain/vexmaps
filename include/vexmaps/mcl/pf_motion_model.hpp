@@ -13,6 +13,7 @@
 #include <arm_neon.h>
 #include <cmath>
 #include <memory>
+#include <mutex>
 #include <random>
 
 // TODO: add settings struct to be able to configure settings
@@ -93,6 +94,8 @@ class PfMotionModel : public BasePfMotionModel {
      * managed by this class only.
      */
     ModelType base_motion_model;
+  protected:
+    mutable pros::Mutex m_mutex;
 
   public:
     template<typename... Args>
@@ -105,15 +108,19 @@ class PfMotionModel : public BasePfMotionModel {
     // wrapper functions for the base motion model
 
     void init() override {
+        std::lock_guard lock(m_mutex);
         base_motion_model.init();
     }
 
     units::Pose getPose() override {
+        std::lock_guard lock(m_mutex);
         return base_motion_model.getPose();
     }
 
     void setPose(units::Pose new_pose) override {
+        std::lock_guard lock(m_mutex);
         base_motion_model.setPose(new_pose);
+        accumulated_global_delta = units::Pose();
     }
 
     std::optional<float> getConfidence() override {
@@ -149,6 +156,7 @@ class PfMotionModel : public BasePfMotionModel {
     // TODO: incorporate confidence value from base motion model to increase or
     // decrease noise
     void update() override {
+        std::lock_guard lock(m_mutex);
         // update base motion model first
         base_motion_model.update();
 
@@ -160,6 +168,7 @@ class PfMotionModel : public BasePfMotionModel {
     }
 
     units::Pose precompute() override {
+        std::lock_guard lock(m_mutex);
         units::Pose current_pose = base_motion_model.getPose();
 
         global_pose_delta = accumulated_global_delta;
@@ -294,6 +303,7 @@ class PfMotionModel : public BasePfMotionModel {
     }
 
     void updateLostIterationCount(int new_count) override {
+        std::lock_guard lock(m_mutex);
         lost_iteration_count = static_cast<float>(new_count);
     }
 };

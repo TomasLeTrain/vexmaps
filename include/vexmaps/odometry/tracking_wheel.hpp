@@ -84,7 +84,7 @@ class MotorGroupTracking : public TrackingWheel {
     double calculateDistance() {
         double distance = 0.0;
 
-        if (motors == nullptr) {
+        if(motors == nullptr){
             printf("odometry: motor group is a nullptr!\n");
             return 0.0;
         }
@@ -117,19 +117,20 @@ class MotorGroupTracking : public TrackingWheel {
                     case pros::MotorUnits::rotations:
                         rotation_multiplier = 1;
                         break;
-                    default: rotation_multiplier = 1; break;
+                    default:
+                        rotation_multiplier = 1;
+                        break;
                 }
 
                 double position = motors->get_position(i);
 
-                double gear_ratio = getGearingRPM(gearing) / this->rpm;
-
                 distance += (position * rotation_multiplier) *
-                            (diameter * M_PI) / gear_ratio;
+                            (diameter * M_PI) * (this->rpm / getGearingRPM(gearing));
             }
         }
 
-        if (used_motor_count != 0.0) distance /= used_motor_count;
+        if(used_motor_count != 0.0)
+            distance /= used_motor_count;
         return distance;
     }
 

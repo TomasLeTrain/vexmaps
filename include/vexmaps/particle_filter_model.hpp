@@ -6,6 +6,7 @@
 #include "vexmaps/mcl/pf_motion_model.hpp"
 #include "vexmaps/mcl/utils.hpp"
 #include <memory>
+#include <mutex>
 
 // TODO: implement all the required methods
 namespace vexmaps {
@@ -22,28 +23,25 @@ class ParticleFilterModel : public LocalizationModel {
     units::Pose global_delta;
     units::Pose local_delta;
 
+  protected:
+    mutable pros::Mutex m_mutex;
+
   public:
     ParticleFilterModel(BasePfMotionModel* motion_model,
                         std::vector<Sensor*>&& sensors,
                         PFConfiguration config)
         : particle_filter(motion_model, std::move(sensors), config) {}
 
-    void changeSetPoseNormalDeviation(Length new_stdev) {
-        set_pose_normal_deviation = new_stdev;
-    }
-
     void init() override {
+        std::lock_guard lock(m_mutex);
         particle_filter.init();
     }
 
-    Time getTaskDeltaTime() override {
-        return taskDeltaTime;
-    }
-
     void update() override {
+        std::lock_guard lock(m_mutex);
         particle_filter.update();
 
-        units::Pose curr_pose = getPose();
+        units::Pose curr_pose = particle_filter.getPose();
 
         global_delta =
           units::Pose(curr_pose - last_pose,
@@ -55,14 +53,11 @@ class ParticleFilterModel : public LocalizationModel {
 
         latest_update_time = from_msec(pros::millis());
 
-        last_pose = getPose();
-    }
-
-    units::Pose getPose() override {
-        return particle_filter.getPose();
+        last_pose = curr_pose;
     }
 
     void setPose(units::Pose new_pose) override {
+        std::lock_guard lock(m_mutex);
         particle_filter.initNormal(new_pose, set_pose_normal_deviation);
     }
 
@@ -71,11 +66,25 @@ class ParticleFilterModel : public LocalizationModel {
                         const Length max_x,
                         const Length max_y,
                         const Angle orientation) {
+        std::lock_guard lock(m_mutex);
         particle_filter.initUniform(min_x, min_y, max_x, max_y, orientation);
     }
 
+    void changeSetPoseNormalDeviation(Length new_stdev) {
+        set_pose_normal_deviation = new_stdev;
+    }
+
+    // getters 
+    Time getTaskDeltaTime() override {
+        return taskDeltaTime;
+    }
+
+    units::Pose getPose() override {
+        return particle_filter.getPose();
+    }
+
     std::optional<float> getConfidence() override {
-        return std::nullopt;
+        return particle_filter.getConfidence();
     }
 
     Length getDistanceTraveled() override {
@@ -85,8 +94,6 @@ class ParticleFilterModel : public LocalizationModel {
     Time getLatestUpdateTimestamp() override {
         return latest_update_time;
     }
-
-    ~ParticleFilterModel() override = default;
 
     /**
      * @brief gets the previous available pose
@@ -108,5 +115,16 @@ class ParticleFilterModel : public LocalizationModel {
     units::Pose getLocalPoseDelta() override {
         return local_delta;
     }
+
+    void setDisabled(bool new_state){
+        std::lock_guard lock(m_mutex);
+        particle_filter.setDisabled(new_state);
+    }
+
+    bool getDisabled(){
+        return particle_filter.getDisabled();
+    }
+
+    ~ParticleFilterModel() override = default;
 };
 }; // namespace vexmaps

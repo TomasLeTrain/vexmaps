@@ -76,6 +76,13 @@ class ParticleFilter {
     // ensures all updates work off of the same angle even if its not the latest
     Angle current_angle = 0_stDeg;
 
+    // set to 1 when we have a global measurement, otherwise nullopt
+    std::optional<float> confidence = std::nullopt;
+
+    // disables most of the particle filters actions (still applies noise and
+    // motion model to prediction)
+    bool disabled = false;
+
     // -- functions called in update -- //
 
     void applyMotionModel() {
@@ -228,7 +235,9 @@ class ParticleFilter {
         // weights to 1/N which can significantly shift the prediction
         updatePrediction(weighted_x_sum / weight_sum,
                          weighted_y_sum / weight_sum,
-                         current_angle);
+                         current_angle,
+                         // sets confidence to 1
+                         1);
     }
 
     // resamples particles using stochastic universal sampling
@@ -265,10 +274,13 @@ class ParticleFilter {
                 // none of the particles are likely at all, meaning we have no
                 // clue where the robot could be
                 lost_iteration_count++;
-                lost_iteration_count = std::min(lost_iteration_count, PFConfig.max_lost_iteration_count);
+                lost_iteration_count =
+                  std::min(lost_iteration_count,
+                           PFConfig.max_lost_iteration_count);
 
                 // printf(
-                //   "No particles are likely: max is: %f, threshold is: " "%f\n, " "lost " "iterat" "ion " "count " "now: " "%d",
+                //   "No particles are likely: max is: %f, threshold is: "
+                //   "%f\n, " "lost " "iterat" "ion " "count " "now: " "%d",
                 //   total_weight,
                 //   PFConfig.lost_max_weight_threshold,
                 //   lost_iteration_count);
@@ -293,8 +305,7 @@ class ParticleFilter {
                    this->appliedMotionModel,
                    this->weightedParticles,
                    this->appliedResampling,
-                   N
-                   );
+                   N);
             printf("prediction:%f,%f,%f\n",
                    this->prediction.x.convert(in),
                    this->prediction.y.convert(in),
@@ -303,7 +314,13 @@ class ParticleFilter {
         }
     }
 
-    void updatePrediction(Length x, Length y, Angle angle) {
+    void updatePrediction(Length x,
+                          Length y,
+                          Angle angle,
+                          std::optional<float> confidence = std::nullopt) {
+        // set to nullopt by default
+        this->confidence = confidence;
+
         prediction.x = x;
         prediction.y = y;
         prediction.orientation = angle;
@@ -356,7 +373,7 @@ class ParticleFilter {
             }
         }
 
-        if (no_active_sensors) {
+        if (no_active_sensors || disabled) {
             // there is nothing we can do in this iteration
             // instead we just update the prediction using the deltas from the
             // base motion model
@@ -365,7 +382,7 @@ class ParticleFilter {
             // be zero so it won't matter
             updatePrediction(getPose().x + globalPoseDelta.x,
                              getPose().y + globalPoseDelta.y,
-                               current_angle);
+                             current_angle);
             endUpdate();
             return;
         }
@@ -467,7 +484,7 @@ class ParticleFilter {
             weights[i] = average_weight;
         }
         // need to update motion model as well
-        updatePrediction(pose.x,pose.y,pose.orientation);
+        updatePrediction(pose.x, pose.y, pose.orientation);
         motion_model->setPose(pose);
     }
 
@@ -492,7 +509,7 @@ class ParticleFilter {
         const Length avg_y = (max_y + min_y) / 2.0;
 
         // need to update motion model as well
-        updatePrediction(avg_x,avg_y,orientation);
+        updatePrediction(avg_x, avg_y, orientation);
         motion_model->setPose({ avg_x, avg_y, orientation });
     }
 
@@ -511,12 +528,20 @@ class ParticleFilter {
     }
 
     std::optional<float> getConfidence() {
-        return std::nullopt;
+        return confidence;
     }
 
     // uses the motion model distance traveled since its less noisy
     Length getDistanceTraveled() {
         return motion_model->getDistanceTraveled();
+    }
+
+    void setDisabled(bool new_state){
+        disabled = new_state;
+    }
+
+    bool getDisabled(){
+        return disabled;
     }
 };
 

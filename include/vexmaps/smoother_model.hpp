@@ -3,6 +3,8 @@
 #include "units/Pose.hpp"
 #include "units/Vector2D.hpp"
 #include "vexmaps/localization_model.hpp"
+#include <mutex>
+#include <optional>
 
 namespace vexmaps {
 struct SmootherConfig {
@@ -11,9 +13,9 @@ struct SmootherConfig {
     // 1 = all measurement
 
     // // determines how much a pose measurement influences the pose estimate
-    double alpha_x = 0.015;
-    double alpha_y = 0.015;
-    double alpha_theta = 0.015;
+    double alpha_x = 0.02;
+    double alpha_y = 0.02;
+    double alpha_theta = 0.00;
 
     // used by pose_delta_measurement to estimate the pose
     double beta_x = 1;
@@ -56,6 +58,9 @@ class SmootherModel : public LocalizationModel {
 
     SmootherConfig config;
 
+  protected:
+    mutable pros::Mutex m_mutex;
+
   public:
     SmootherModel(LocalizationModel* local_delta_model,
                   LocalizationModel* global_pose_model,
@@ -65,11 +70,13 @@ class SmootherModel : public LocalizationModel {
           config(config) {}
 
     void init() override {
+        std::lock_guard lock(m_mutex);
         latest_timestamp = from_msec(pros::millis());
     }
 
     // TODO: switch to using doubles for this as computations are cheap
     void update() override {
+        std::lock_guard lock(m_mutex);
         Time current_timestamp = from_msec(pros::millis());
 
         latest_delta_time = current_timestamp - latest_timestamp;
@@ -87,12 +94,11 @@ class SmootherModel : public LocalizationModel {
 
         units::Pose previous_pose_estimate = pose_estimate;
 
-
         // calculate the predictions first using the transition equations:
-        units::Pose pose_prediction = units::Pose(
-          (pose_estimate + velocity_estimate * delta_time),
-          pose_estimate.orientation + velocity_estimate.orientation * delta_time
-          );
+        units::Pose pose_prediction =
+          units::Pose((pose_estimate + velocity_estimate * delta_time),
+                      pose_estimate.orientation +
+                        velocity_estimate.orientation * delta_time);
 
         units::VelocityPose velocity_prediction = velocity_estimate;
 
@@ -113,7 +119,6 @@ class SmootherModel : public LocalizationModel {
 
             units::Pose pose_delta_measurement =
               local_delta_model->getGlobalPoseDelta();
-            
 
             velocity_estimate.x =
               velocity_estimate.x +
@@ -155,7 +160,8 @@ class SmootherModel : public LocalizationModel {
         }
 
         // only correct pose if we have a new pose measurement
-        if (current_pose_timestamp != last_pose_timestamp) {
+        if (current_pose_timestamp != last_pose_timestamp &&
+            pose_model->getConfidence() != std::nullopt) {
             units::Pose pose_measurement = pose_model->getPose();
 
             pose_estimate.x =
@@ -166,10 +172,11 @@ class SmootherModel : public LocalizationModel {
               pose_estimate.y +
               config.alpha_y * (pose_measurement.y - pose_estimate.y);
 
-            pose_estimate.orientation =
-              pose_estimate.orientation +
-              config.alpha_theta *
-                (pose_measurement.orientation - pose_estimate.orientation);
+            // only good if pose has an orientation measurement
+            // pose_estimate.orientation =
+            //   pose_estimate.orientation +
+            //   config.alpha_theta *
+            //     (pose_measurement.orientation - pose_estimate.orientation);
 
             last_pose_timestamp = current_pose_timestamp;
             applied_global = true;
@@ -185,7 +192,7 @@ class SmootherModel : public LocalizationModel {
         Angle avg_angle =
           last_pose_estimate.orientation + global_pose_delta.orientation / 2.0;
 
-        if(applied_local){
+        if (applied_local) {
             last_local_estimate = pose_estimate;
         }
 
@@ -193,6 +200,7 @@ class SmootherModel : public LocalizationModel {
     }
 
     void setPose(units::Pose new_pose) override {
+        std::lock_guard lock(m_mutex);
         pose_estimate = new_pose;
         last_pose_estimate = new_pose;
         last_local_estimate = new_pose;

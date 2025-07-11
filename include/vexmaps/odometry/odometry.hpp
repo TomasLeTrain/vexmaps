@@ -12,6 +12,7 @@
 #include "units/units.hpp"
 #include "vexmaps/localization_model.hpp"
 #include "vexmaps/odometry/tracking_wheel.hpp"
+#include <mutex>
 
 namespace vexmaps {
 class OdometryModel : public LocalizationModel {
@@ -51,6 +52,8 @@ class OdometryModel : public LocalizationModel {
 
     Time delta_time = 10.0_msec;
     Time latest_update_time = 0.0_sec;
+  protected:
+    mutable pros::Mutex m_mutex;
 
   public:
     OdometryModel(
@@ -71,6 +74,7 @@ class OdometryModel : public LocalizationModel {
      * @brief Should be called once to initialize the model
      */
     void init() override {
+        std::lock_guard lock(m_mutex);
         imu->set_rotation(0);
 
         left_tracker->init();
@@ -88,6 +92,8 @@ class OdometryModel : public LocalizationModel {
      * @brief Updates pose estimate. Should be called frequently
      */
     void update() override {
+        std::lock_guard lock(m_mutex);
+
         left_tracker->update();
         right_tracker->update();
 
@@ -225,6 +231,8 @@ class OdometryModel : public LocalizationModel {
     }
 
     void setPose(units::Pose new_pose) override {
+        std::lock_guard lock(m_mutex);
+
         pose_x = to_in(new_pose.x);
         pose_y = to_in(new_pose.y);
         angle = new_pose.orientation.internal();
@@ -237,12 +245,14 @@ class OdometryModel : public LocalizationModel {
         last_angle = angle;
     }
 
+    // getters
+
     units::Pose getPose() override {
         return units::Pose(from_in(pose_x), from_in(pose_y), from_stRad(angle));
     }
 
     /**
-     * @brief gets the previous available pose, if it exists
+     * @brief gets the previous available pose
      */
     units::Pose getLastPose() override {
         return units::Pose(from_in(last_pose_x),
@@ -251,7 +261,7 @@ class OdometryModel : public LocalizationModel {
     }
 
     /**
-     * @brief Get latest global pose delta, if it exists
+     * @brief Get latest global pose delta
      */
     units::Pose getGlobalPoseDelta() override {
         return units::Pose(from_in(global_x_delta),
