@@ -181,15 +181,15 @@ class OdometryModel : public LocalizationModel {
             double sin_multiplier = 2.0 * sin(angle_delta / 2.0);
 
             if (drivetrain_enabled) {
-                double local_x_left_delta = sin_multiplier * (left_tracker->getDeltaDistance() / angle_delta + left_tracker->getOffset());
-                double local_x_right_delta = sin_multiplier * (right_tracker->getDeltaDistance() / angle_delta + right_tracker->getOffset());
-                local_x_delta += (local_x_left_delta + local_x_right_delta) / 2.0;
+                double local_dt_left_delta = sin_multiplier * (left_tracker->getDeltaDistance() / angle_delta - left_tracker->getOffset());
+                double local_dt_right_delta = sin_multiplier * (right_tracker->getDeltaDistance() / angle_delta - right_tracker->getOffset());
+                local_x_delta += (local_dt_left_delta + local_dt_right_delta) / 2.0;
                 x_tracker_count += 1.0;
             }
 
             for (auto&& tracker : vertical_trackers) {
                 if(tracker->getAvailable()){
-                    local_x_delta += sin_multiplier * (tracker->getDeltaDistance() / angle_delta + tracker->getOffset());
+                    local_x_delta += sin_multiplier * (tracker->getDeltaDistance() / angle_delta - tracker->getOffset());
                     // printf("\\left(%f,",tracker->getDeltaDistance() / angle_delta);
                     x_tracker_count += 1.0;
                 }
@@ -197,7 +197,7 @@ class OdometryModel : public LocalizationModel {
 
             for (auto&& tracker : horizontal_trackers) {
                 if(tracker->getAvailable()){
-                    local_y_delta += sin_multiplier * (tracker->getDeltaDistance() / angle_delta + tracker->getOffset());
+                    local_y_delta += sin_multiplier * (tracker->getDeltaDistance() / angle_delta - tracker->getOffset());
                     // printf("%f\\right),\n",tracker->getDeltaDistance() / angle_delta);
                     y_tracker_count += 1.0;
                 }
