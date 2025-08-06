@@ -52,6 +52,7 @@ class OdometryModel : public LocalizationModel {
 
     Time delta_time = 10.0_msec;
     Time latest_update_time = 0.0_sec;
+
   protected:
     mutable pros::Mutex m_mutex;
 
@@ -119,18 +120,20 @@ class OdometryModel : public LocalizationModel {
 
         double current_imu_angle = last_imu_angle;
 
-        if(imu == nullptr){
+        if (imu == nullptr) {
             printf("WARNING: IMU IS NULL - Check config for a nullptr!\n");
             current_imu_angle = last_imu_angle;
-        }else if(!imu->is_installed()){
-            printf("WARNING: IMU NOT DETECTED - Check cable connection or port!\n");
+        } else if (!imu->is_installed()) {
+            printf(
+              "WARNING: IMU NOT DETECTED - Check cable connection or port!\n");
             current_imu_angle = last_imu_angle;
-        }else{
+        } else {
             // imu is installed
             if (std::isfinite(imu->get_rotation())) {
                 current_imu_angle = imu->get_rotation() * (M_PI / 180.0);
             } else {
-                printf("WARNING: IMU NOT FINITE - Might not be calibrated or did not calibrate properly!\n");
+                printf(
+                  "WARNING: IMU NOT FINITE - Might not be calibrated or " "did " "not " "cali" "brat" "e " "prop" "erly" "!" "\n");
                 current_imu_angle = last_imu_angle;
             }
         }

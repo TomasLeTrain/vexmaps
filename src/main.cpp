@@ -111,12 +111,6 @@ vexmaps::ParticleFilterModel<particle_count> pf_model(&pf_motion_model,
 vexmaps::SmootherModel
   smoother_model(&pf_motion_model, &pf_model, vexmaps::SmootherConfig());
 
-/**
- * Runs initialization code. This occurs as soon as the program is started.
- *
- * All other competition modes are blocked by initialize; it is recommended
- * to keep execution time for this mode under a few seconds.
- */
 void initialize() {
     // pros::c::serctl(SERCTL_DISABLE_COBS,NULL);
     // reset the imu
