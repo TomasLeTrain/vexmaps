@@ -95,11 +95,6 @@ struct MotionModelConfig {
     // intervals in which it is being applied
     // lost_iter... variables are not affected by this
     FTime process_time = 10_msec;
-
-    // percentage by which noise increases for every process_time time period
-    // done since doubling the noise values may result in way too much noise
-    // uniform(2 * a, 2 * b) != 2 * uniform(a, b) + uniform(a, b)
-    float process_time_noise_factor = 0.5;
 };
 
 struct DistanceSensorConfiguration {

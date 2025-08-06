@@ -13,15 +13,15 @@
                 "py/object": "pros.conductor.templates.local_template.LocalTemplate",
                 "supported_kernels": "^4.2.1",
                 "system_files": [
-                    "include/units/Temperature.hpp",
-                    "include/units/Pose.hpp",
-                    "firmware/float_units.a",
-                    "include/units/Vector3D.hpp",
-                    "include/units/Vector2D.hpp",
                     "include/units/units.hpp",
-                    "include/units/Angle.hpp",
+                    "include/units/Pose.hpp",
                     "include/units/all.hpp",
-                    "firmware/hot-cold-asset.mk"
+                    "include/units/Temperature.hpp",
+                    "firmware/float_units.a",
+                    "include/units/Vector2D.hpp",
+                    "include/units/Vector3D.hpp",
+                    "firmware/hot-cold-asset.mk",
+                    "include/units/Angle.hpp"
                 ],
                 "target": "v5",
                 "user_files": [],

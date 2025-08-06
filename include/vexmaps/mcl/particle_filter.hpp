@@ -74,7 +74,7 @@ class ParticleFilter {
     float ess;
 
     // ensures all updates work off of the same angle even if its not the latest
-    FAngle current_angle = 0_stDeg;
+    FAngle current_angle = 0_FstDeg;
 
     // set to 1 when we have a global measurement, otherwise nullopt
     std::optional<float> confidence = std::nullopt;
@@ -86,7 +86,7 @@ class ParticleFilter {
     // -- functions called in update -- //
 
     void applyMotionModel() {
-        globalPoseDelta = units::FPose(0_m, 0_m, 0_stDeg);
+        globalPoseDelta = units::FPose(0_Fm, 0_Fm, 0_FstDeg);
         // applies noise regardless if we have new information or not
         // should be fine since the noise is scaled based on time
         units::FPose current_global_delta = motion_model->precompute();
@@ -213,8 +213,8 @@ class ParticleFilter {
         }
 
         // sum of included particles multiplied by their respective weights
-        FLength weighted_x_sum = 0.0_m;
-        FLength weighted_y_sum = 0.0_m;
+        FLength weighted_x_sum = 0.0_Fm;
+        FLength weighted_y_sum = 0.0_Fm;
 
         // sum of the weights of the particles included in the prediction
         float weight_sum = 0;
@@ -472,9 +472,9 @@ class ParticleFilter {
      * point.
      */
     void initNormal(const units::FPose pose, const FLength std_deviation) {
-        std::normal_distribution x_dist(pose.x.internal(),
+        std::normal_distribution<float> x_dist(pose.x.internal(),
                                         std_deviation.internal());
-        std::normal_distribution y_dist(pose.y.internal(),
+        std::normal_distribution<float> y_dist(pose.y.internal(),
                                         std_deviation.internal());
         for (size_t i = 0; i < N; i++) {
             x[i] = x_dist(rng) * m;
@@ -493,9 +493,9 @@ class ParticleFilter {
                      const FLength max_x,
                      const FLength max_y,
                      const FAngle orientation) {
-        std::uniform_real_distribution x_dist(min_x.internal(),
+        std::uniform_real_distribution<float> x_dist(min_x.internal(),
                                               max_x.internal());
-        std::uniform_real_distribution y_dist(min_y.internal(),
+        std::uniform_real_distribution<float> y_dist(min_y.internal(),
                                               max_y.internal());
 
         for (size_t i = 0; i < N; i++) {
@@ -515,8 +515,8 @@ class ParticleFilter {
 
     void init() {
         for (size_t i = 0; i < N; i++) {
-            x[i] = 0.0_m;
-            y[i] = 0.0_m;
+            x[i] = 0.0_Fm;
+            y[i] = 0.0_Fm;
             weights[i] = average_weight;
         }
 
@@ -524,7 +524,7 @@ class ParticleFilter {
                     -wall_length,
                     wall_length,
                     wall_length,
-                    0_stDeg);
+                    0_FstDeg);
     }
 
     std::optional<float> getConfidence() {

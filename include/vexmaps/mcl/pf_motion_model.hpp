@@ -36,7 +36,7 @@ class BasePfMotionModel : public LocalizationModel {
     /**
      * @brief Returns a noisy global delta
      */
-    virtual units::V2Position noisyGlobalDelta() = 0;
+    virtual units::V2FPosition noisyGlobalDelta() = 0;
     /**
      * @brief Called by the particle filter to update the lost iteration count
      */
@@ -71,9 +71,9 @@ class PfMotionModel : public BasePfMotionModel {
     float drift_b = 0;
     float drift_k = 0;
 
-    FTime update_timestamp = 0_sec;
+    Time update_timestamp = 0_sec;
 
-    FAngle abs_delta_theta = 0_stDeg;
+    Angle abs_delta_theta = 0_stDeg;
 
     float32x4_t Vsina, Vcosa;
     float sina, cosa;
@@ -83,9 +83,9 @@ class PfMotionModel : public BasePfMotionModel {
     float lost_iteration_count = 0;
 
     // used to compute the delta time between motion updates
-    FTime last_precomputed_time = infinity() * sec;
+    Time last_precomputed_time = infinity() * sec;
 
-    units::FPose accumulated_global_delta = units::FPose(), global_pose_delta;
+    units::Pose accumulated_global_delta = units::Pose(), global_pose_delta;
 
     MotionModelConfig motionModelConfig;
 
@@ -94,6 +94,7 @@ class PfMotionModel : public BasePfMotionModel {
      * managed by this class only.
      */
     ModelType base_motion_model;
+
   protected:
     mutable pros::Mutex m_mutex;
 
@@ -112,12 +113,12 @@ class PfMotionModel : public BasePfMotionModel {
         base_motion_model.init();
     }
 
-    units::FPose getPose() override {
+    units::Pose getPose() override {
         std::lock_guard lock(m_mutex);
         return base_motion_model.getPose();
     }
 
-    void setPose(units::FPose new_pose) override {
+    void setPose(units::Pose new_pose) override {
         std::lock_guard lock(m_mutex);
         base_motion_model.setPose(new_pose);
         accumulated_global_delta = units::FPose();
@@ -127,27 +128,27 @@ class PfMotionModel : public BasePfMotionModel {
         return base_motion_model.getConfidence();
     }
 
-    units::FPose getGlobalPoseDelta() override {
+    units::Pose getGlobalPoseDelta() override {
         return base_motion_model.getGlobalPoseDelta();
     }
 
-    units::FPose getLocalPoseDelta() override {
+    units::Pose getLocalPoseDelta() override {
         return base_motion_model.getLocalPoseDelta();
     }
 
-    units::FPose getLastPose() override {
+    units::Pose getLastPose() override {
         return base_motion_model.getLastPose();
     }
 
-    FLength getDistanceTraveled() override {
+    Length getDistanceTraveled() override {
         return base_motion_model.getDistanceTraveled();
     }
 
-    FTime getTaskDeltaTime() override {
+    Time getTaskDeltaTime() override {
         return base_motion_model.getTaskDeltaTime();
     }
 
-    FTime getLatestUpdateTimestamp() override {
+    Time getLatestUpdateTimestamp() override {
         return update_timestamp;
     }
 
@@ -161,10 +162,11 @@ class PfMotionModel : public BasePfMotionModel {
         base_motion_model.update();
 
         accumulated_global_delta += base_motion_model.getGlobalPoseDelta();
-        accumulated_global_delta.orientation += base_motion_model.getGlobalPoseDelta().orientation;
+        accumulated_global_delta.orientation +=
+          base_motion_model.getGlobalPoseDelta().orientation;
 
         // update timestamps
-        update_timestamp = from_msec(pros::millis());
+        update_timestamp = from_msec(static_cast<double>(pros::millis()));
     }
 
     units::FPose precompute() override {
@@ -172,10 +174,10 @@ class PfMotionModel : public BasePfMotionModel {
         units::FPose current_pose = base_motion_model.getPose();
 
         global_pose_delta = accumulated_global_delta;
-        accumulated_global_delta = units::FPose();
+        accumulated_global_delta = units::Pose();
 
-        FTime current_precompute_time = from_msec(pros::millis());
-        FTime delta_time;
+        Time current_precompute_time = from_msec(pros::millis());
+        Time delta_time = 0_msec;
 
         if (std::isfinite(last_precomputed_time.internal())) {
             delta_time = current_precompute_time - last_precomputed_time;
@@ -188,37 +190,34 @@ class PfMotionModel : public BasePfMotionModel {
         abs_delta_theta = units::abs(global_pose_delta.orientation);
 
         // scales noise according to the amount of time that has passed
-        float delta_times = (delta_time / motionModelConfig.process_time);
+        double delta_times = (delta_time / motionModelConfig.process_time);
 
-        if (delta_times < 1) {
-            delta_times = 0;
-        } else {
-            delta_times -= 1;
-        }
+        // to increase the area of the noise linearly we must scale it based on
+        // the square root of the delta times
+        double time_noise_multiplier = sqrt(delta_times);
 
-        float time_noise_multiplier =
-          1 + delta_times * motionModelConfig.process_time_noise_factor;
-
-        const FLength time_dependent_forwards_noise =
+        // noise which depends on the time passed since last update
+        const Length time_dependent_forwards_noise =
           motionModelConfig.forwards_noise +
           motionModelConfig.angle_to_forwards_noise * abs_delta_theta;
 
-        const FAngle time_dependent_angle_noise =
+        const Angle time_dependent_angle_noise =
           abs_delta_theta * motionModelConfig.angle_noise;
 
-        const FLength time_dependent_drift_noise =
+        const Length time_dependent_drift_noise =
           motionModelConfig.drift_noise +
           motionModelConfig.angle_to_drift_noise * abs_delta_theta;
 
-        const FLength distance_noise =
+        // time and non time dependent noises combined
+        const Length distance_noise =
           time_dependent_forwards_noise * time_noise_multiplier +
           motionModelConfig.lost_iter_to_forwards_noise * lost_iteration_count;
 
-        const FAngle angle_noise =
+        const Angle angle_noise =
           time_dependent_angle_noise * time_noise_multiplier +
           motionModelConfig.lost_iter_to_angle_noise * lost_iteration_count;
 
-        const FLength drift_noise =
+        const Length drift_noise =
           time_dependent_drift_noise * time_noise_multiplier +
           motionModelConfig.lost_iter_to_drift_noise * lost_iteration_count;
 
@@ -238,13 +237,14 @@ class PfMotionModel : public BasePfMotionModel {
         forwards_distribution = Vuniform_float32_t((-distance_noise).internal(),
                                                    (+distance_noise).internal(),
                                                    robot_rng());
+        // doubles get casted to floats
         angle_a = (-angle_noise).internal();
         angle_b = (+angle_noise).internal();
-        angle_k = (angle_b - angle_a) / static_cast<float>(UINT32_MAX);
+        angle_k = (angle_b - angle_a) / static_cast<double>(UINT32_MAX);
 
         drift_a = (-drift_noise).internal();
         drift_b = (+drift_noise).internal();
-        drift_k = (drift_b - drift_a) / static_cast<float>(UINT32_MAX);
+        drift_k = (drift_b - drift_a) / static_cast<double>(UINT32_MAX);
 
         global_pose_delta_x = global_pose_delta.x.internal();
         global_pose_delta_y = global_pose_delta.y.internal();
@@ -287,7 +287,7 @@ class PfMotionModel : public BasePfMotionModel {
      *
      * @return Noisy global delta
      */
-    units::V2Position noisyGlobalDelta() override {
+    units::V2FPosition noisyGlobalDelta() override {
         const FLength vertical_noise = average_distance_distribution(rng) * m;
         const FLength horizontal_noise = drift_distribution(rng) * m;
         const float angle_noise = angle_distribution(rng);

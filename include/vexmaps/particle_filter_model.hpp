@@ -13,15 +13,15 @@ namespace vexmaps {
 template<size_t N>
 class ParticleFilterModel : public LocalizationModel {
   private:
-    FLength set_pose_normal_deviation = 2_in;
-    FTime taskDeltaTime = 10.0_msec;
-    FTime latest_update_time = 0.0_sec;
+    Length set_pose_normal_deviation = 2_in;
+    Time taskDeltaTime = 10.0_msec;
+    Time latest_update_time = 0.0_sec;
 
     ParticleFilter<N> particle_filter;
 
-    units::FPose last_pose;
-    units::FPose global_delta;
-    units::FPose local_delta;
+    units::Pose last_pose;
+    units::Pose global_delta;
+    units::Pose local_delta;
 
   protected:
     mutable pros::Mutex m_mutex;
@@ -41,13 +41,13 @@ class ParticleFilterModel : public LocalizationModel {
         std::lock_guard lock(m_mutex);
         particle_filter.update();
 
-        units::FPose curr_pose = particle_filter.getPose();
+        units::Pose curr_pose = particle_filter.getPose();
 
         global_delta =
-          units::FPose(curr_pose - last_pose,
+          units::Pose(curr_pose - last_pose,
                       curr_pose.orientation - last_pose.orientation);
 
-        FAngle avg_angle = (curr_pose.orientation + last_pose.orientation) / 2.0;
+        Angle avg_angle = (curr_pose.orientation + last_pose.orientation) / 2.0;
 
         local_delta = globalToLocalDelta(global_delta, avg_angle);
 
@@ -56,30 +56,30 @@ class ParticleFilterModel : public LocalizationModel {
         last_pose = curr_pose;
     }
 
-    void setPose(units::FPose new_pose) override {
+    void setPose(units::Pose new_pose) override {
         std::lock_guard lock(m_mutex);
         particle_filter.initNormal(new_pose, set_pose_normal_deviation);
     }
 
-    void setPoseUniform(const FLength min_x,
-                        const FLength min_y,
-                        const FLength max_x,
-                        const FLength max_y,
-                        const FAngle orientation) {
+    void setPoseUniform(const Length min_x,
+                        const Length min_y,
+                        const Length max_x,
+                        const Length max_y,
+                        const Angle orientation) {
         std::lock_guard lock(m_mutex);
         particle_filter.initUniform(min_x, min_y, max_x, max_y, orientation);
     }
 
-    void changeSetPoseNormalDeviation(FLength new_stdev) {
+    void changeSetPoseNormalDeviation(Length new_stdev) {
         set_pose_normal_deviation = new_stdev;
     }
 
     // getters 
-    FTime getTaskDeltaTime() override {
+    Time getTaskDeltaTime() override {
         return taskDeltaTime;
     }
 
-    units::FPose getPose() override {
+    units::Pose getPose() override {
         return particle_filter.getPose();
     }
 
@@ -87,32 +87,32 @@ class ParticleFilterModel : public LocalizationModel {
         return particle_filter.getConfidence();
     }
 
-    FLength getDistanceTraveled() override {
+    Length getDistanceTraveled() override {
         return particle_filter.getDistanceTraveled();
     }
 
-    FTime getLatestUpdateTimestamp() override {
+    Time getLatestUpdateTimestamp() override {
         return latest_update_time;
     }
 
     /**
      * @brief gets the previous available pose
      */
-    units::FPose getLastPose() override {
+    units::Pose getLastPose() override {
         return last_pose;
     }
 
     /**
      * @brief Get latest global pose delta
      */
-    units::FPose getGlobalPoseDelta() override {
+    units::Pose getGlobalPoseDelta() override {
         return global_delta;
     }
 
     /**
      * @brief Get latest local pose delta
      */
-    units::FPose getLocalPoseDelta() override {
+    units::Pose getLocalPoseDelta() override {
         return local_delta;
     }
 

@@ -15,13 +15,24 @@ inline RobotEntropy<uint32_t> robot_rng;
 
 inline std::ranlux24_base rng(robot_rng());
 
-inline units::FPose rotatePose(const units::FPose& point, const FAngle& angle) {
-    const float sina = units::sin(angle).internal();
-    const float cosa = units::cos(angle).internal();
+// rotates pose around origin. Does not change orientation
+inline units::FPose FrotatePose(const units::FPose& point, const FAngle& angle) {
+    // does not use units::sin/cos to avoid cast from Number (double) to float
+    const float sina = std::sin(angle.internal());
+    const float cosa = std::cos(angle.internal());
 
     return { point.x * cosa - point.y * sina,
              point.x * sina + point.y * cosa,
-             point.orientation };
+             point.orientation + angle };
+}
+
+inline units::Pose rotatePose(const units::Pose& point, const Angle& angle) {
+    const double sina = units::sin(angle).internal();
+    const double cosa = units::cos(angle).internal();
+
+    return { point.x * cosa - point.y * sina,
+             point.x * sina + point.y * cosa,
+             point.orientation + angle };
 }
 
 template<double std_dev = 1.0, double multiplier = 1.0>

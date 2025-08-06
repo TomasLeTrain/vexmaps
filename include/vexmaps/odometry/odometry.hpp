@@ -233,7 +233,7 @@ class OdometryModel : public LocalizationModel {
         latest_update_time = from_msec(pros::millis());
     }
 
-    void setPose(units::FPose new_pose) override {
+    void setPose(units::Pose new_pose) override {
         std::lock_guard lock(m_mutex);
 
         pose_x = to_in(new_pose.x);
@@ -249,16 +249,15 @@ class OdometryModel : public LocalizationModel {
     }
 
     // getters
-
-    units::FPose getPose() override {
-        return units::FPose(from_in(pose_x), from_in(pose_y), from_stRad(angle));
+    units::Pose getPose() override {
+        return units::Pose(from_in(pose_x), from_in(pose_y), from_stRad(angle));
     }
 
     /**
      * @brief gets the previous available pose
      */
-    units::FPose getLastPose() override {
-        return units::FPose(from_in(last_pose_x),
+    units::Pose getLastPose() override {
+        return units::Pose(from_in(last_pose_x),
                            from_in(last_pose_y),
                            from_stRad(last_angle));
     }
@@ -266,8 +265,8 @@ class OdometryModel : public LocalizationModel {
     /**
      * @brief Get latest global pose delta
      */
-    units::FPose getGlobalPoseDelta() override {
-        return units::FPose(from_in(global_x_delta),
+    units::Pose getGlobalPoseDelta() override {
+        return units::Pose(from_in(global_x_delta),
                            from_in(global_y_delta),
                            from_stRad(angle_delta));
     }
@@ -275,8 +274,8 @@ class OdometryModel : public LocalizationModel {
     /**
      * @brief Get latest local pose delta
      */
-    units::FPose getLocalPoseDelta() override {
-        return units::FPose(from_in(local_x_delta),
+    units::Pose getLocalPoseDelta() override {
+        return units::Pose(from_in(local_x_delta),
                            from_in(local_y_delta),
                            from_stRad(angle_delta));
     }
@@ -297,15 +296,15 @@ class OdometryModel : public LocalizationModel {
      *
      * @return distance traveled by the robot
      */
-    FLength getDistanceTraveled() override {
+    Length getDistanceTraveled() override {
         return from_in(distance_traveled);
     }
 
-    FTime getTaskDeltaTime() override {
+    Time getTaskDeltaTime() override {
         return delta_time;
     }
 
-    FTime getLatestUpdateTimestamp() override {
+    Time getLatestUpdateTimestamp() override {
         return latest_update_time;
     }
 
