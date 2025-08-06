@@ -17,14 +17,14 @@ namespace vexmaps {
 template<class DistanceSensorConfig>
     requires ValidDistanceConfig<DistanceSensorConfig>
 class DistanceSensorModel : public Sensor {
-    Length measured_distance = 0_m;
+    FLength measured_distance = 0_m;
     pros::Distance* distance_sensor;
 
-    Angle angle = 0_stDeg;
+    FAngle angle = 0_stDeg;
 
-    units::Pose offsets;
+    units::FPose offsets;
 
-    units::Pose rotated_offsets = { 0_m, 0_m, 0_stDeg };
+    units::FPose rotated_offsets = { 0_m, 0_m, 0_stDeg };
 
     // 2.5 meters is more than what the distance sensor will ever be able to
     // sense
@@ -41,8 +41,8 @@ class DistanceSensorModel : public Sensor {
     double secant;
     double cosecant;
 
-    Length horizontal_wall_length = wall_length;
-    Length vertical_wall_length = wall_length;
+    FLength horizontal_wall_length = wall_length;
+    FLength vertical_wall_length = wall_length;
 
     // floats since they are used in evaluate
     float Vhor_wall_coeff;
@@ -50,8 +50,8 @@ class DistanceSensorModel : public Sensor {
 
     float x_coeff;
     float y_coeff;
-    Length hor_wall_coeff;
-    Length ver_wall_coeff;
+    FLength hor_wall_coeff;
+    FLength ver_wall_coeff;
 
     float expFactor;
 
@@ -64,13 +64,13 @@ class DistanceSensorModel : public Sensor {
 
   public:
     DistanceSensorModel(pros::Distance* distance_sensor,
-                        const units::Pose offset,
+                        const units::FPose offset,
                         std::string name)
         : offsets(offset),
           distance_sensor(std::move(distance_sensor)),
           name(name) {}
 
-    void update(Angle angle) override {
+    void update(FAngle angle) override {
         // first check if the distance sensor is available, and if its not then
         // fail non-destructively while still alerting user
         if (distance_sensor == nullptr || !distance_sensor->is_installed()) {
@@ -88,7 +88,7 @@ class DistanceSensorModel : public Sensor {
         exit = measured_mm == 9999 || (!enabled);
 
         this->angle = angle;
-        const Angle offset_angle = this->angle + offsets.orientation;
+        const FAngle offset_angle = this->angle + offsets.orientation;
         // keeps the angle the same
         rotated_offsets = rotatePose(offsets, this->angle);
 
@@ -160,8 +160,8 @@ class DistanceSensorModel : public Sensor {
 
     // assumes that its only getting called if exit is false
     // this assumption saves some conditionals improving performance
-    inline float evaluate(Length x, Length y) override {
-        const Length difference = units::min(hor_wall_coeff + x * x_coeff,
+    inline float evaluate(FLength x, FLength y) override {
+        const FLength difference = units::min(hor_wall_coeff + x * x_coeff,
                                              ver_wall_coeff + y * y_coeff);
 
         float normal_dist =

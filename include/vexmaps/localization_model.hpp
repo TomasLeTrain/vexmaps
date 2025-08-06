@@ -18,22 +18,22 @@ class LocalizationModel {
      * @brief Updates pose estimate. Should be called frequently
      */
     virtual void update() = 0;
-    virtual void setPose(units::Pose new_pose) = 0;
+    virtual void setPose(units::FPose new_pose) = 0;
 
-    virtual units::Pose getPose() = 0;
+    virtual units::FPose getPose() = 0;
 
     /**
      * @brief gets the previous available pose
      */
-    virtual units::Pose getLastPose() = 0;
+    virtual units::FPose getLastPose() = 0;
     /**
      * @brief Get latest global pose delta
      */
-    virtual units::Pose getGlobalPoseDelta() = 0;
+    virtual units::FPose getGlobalPoseDelta() = 0;
     /**
      * @brief Get latest local pose delta
      */
-    virtual units::Pose getLocalPoseDelta() = 0;
+    virtual units::FPose getLocalPoseDelta() = 0;
 
     /**
      * @brief returns a value representing the confidence of the current pose
@@ -48,11 +48,11 @@ class LocalizationModel {
      *
      * @return distance traveled by the robot
      */
-    virtual Length getDistanceTraveled() = 0;
+    virtual FLength getDistanceTraveled() = 0;
 
-    virtual Time getTaskDeltaTime() = 0;
+    virtual FTime getTaskDeltaTime() = 0;
 
-    virtual Time getLatestUpdateTimestamp() = 0;
+    virtual FTime getLatestUpdateTimestamp() = 0;
 
     virtual ~LocalizationModel() = default;
 };
@@ -69,15 +69,15 @@ inline pros::Task createLocalizationTask(LocalizationModel* model){
     return task;
 }
 
-inline units::Pose globalToLocalDelta(units::Pose global_delta, Angle pose_angle){
-        return units::Pose(
+inline units::FPose globalToLocalDelta(units::FPose global_delta, FAngle pose_angle){
+        return units::FPose(
                 global_delta.x * units::cos(-pose_angle) - global_delta.y * units::sin(-pose_angle),
                 global_delta.x * units::sin(-pose_angle) + global_delta.y * units::cos(-pose_angle),
                 global_delta.orientation);
 }
 
-inline units::Pose localToGlobalDelta(units::Pose local_delta, Angle pose_angle){
-        return units::Pose(
+inline units::FPose localToGlobalDelta(units::FPose local_delta, FAngle pose_angle){
+        return units::FPose(
                 local_delta.x * units::cos(pose_angle) - local_delta.y * units::sin(pose_angle),
                 local_delta.x * units::sin(pose_angle) + local_delta.y * units::cos(pose_angle),
                 local_delta.orientation);

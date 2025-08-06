@@ -46,23 +46,23 @@ struct PFConfiguration {
     float weightPredictionFactor = 0.8;
 
     // should be at most half the width of the robot
-    Length wall_border_width = 6_in;
+    FLength wall_border_width = 6_in;
 };
 
 struct MotionModelConfig {
-    Length forwards_noise = 0.4_in;
+    FLength forwards_noise = 0.4_in;
 
     // relates slip to change in distance
     // higher distance travel usually results in wheel slipage, therefore we use
     // a ratio to add noise based on change in distance x inches of noise added
     // / x inches traveled
-    Divided<Length, LinearVelocity> slip_velocity_factor = 2_in / 30_inps;
+    Divided<FLength, FLinearVelocity> slip_velocity_factor = 2_in / 30_inps;
 
     // relates slip to change in distance
     // higher distance travel usually results in wheel slipage, therefore we use
     // a ratio to add noise based on change in distance x inches of noise added
     // / x inches traveled
-    Divided<Length, LinearAcceleration> slip_acceleration_factor =
+    Divided<FLength, FLinearAcceleration> slip_acceleration_factor =
       2_in / 100_inps2;
 
     // factor of how much the avg angle change should be applied as noise
@@ -71,30 +71,30 @@ struct MotionModelConfig {
     float angle_noise = 1.0;
 
     // applies drift to particles
-    Length drift_noise = 0.4_in;
+    FLength drift_noise = 0.4_in;
 
     // relation factor between the change in angle and drift
     // big changes in angle plus movement is usually what results in drift
     // therefore we can increase drift when we have big angles changes to better
     // model the robot.
-    Divided<Length, Angle> angle_to_drift_noise = 0.1_in / 30_stDeg;
+    Divided<FLength, FAngle> angle_to_drift_noise = 0.1_in / 30_stDeg;
 
     // same as angle drift relation factor
     // instead this one relates the angle change in movement vertically
     // this also accounts for the drastical drift that happens on angle changes
-    Divided<Length, Angle> angle_to_forwards_noise = 0.01_in / 30_stDeg;
+    Divided<FLength, FAngle> angle_to_forwards_noise = 0.01_in / 30_stDeg;
 
     // relates number of lost iterations to additional noise in the system
     // set to zero to disable lost iterations from applying at all
-    Length lost_iter_to_forwards_noise = 0.2_in;
-    Length lost_iter_to_drift_noise = 0.2_in;
-    Angle lost_iter_to_angle_noise = 1_stDeg;
+    FLength lost_iter_to_forwards_noise = 0.2_in;
+    FLength lost_iter_to_drift_noise = 0.2_in;
+    FAngle lost_iter_to_angle_noise = 1_stDeg;
 
     // amount of time expected between the process noise being applied
     // this is done to make sure the noise stays consistent regardless of the
     // intervals in which it is being applied
     // lost_iter... variables are not affected by this
-    Time process_time = 10_msec;
+    FTime process_time = 10_msec;
 
     // percentage by which noise increases for every process_time time period
     // done since doubling the noise values may result in way too much noise

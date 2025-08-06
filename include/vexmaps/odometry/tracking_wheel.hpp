@@ -73,9 +73,9 @@ class MotorGroupTracking : public TrackingWheel {
           offset(offset) {}
 
     MotorGroupTracking(pros::MotorGroup* motors,
-                       Length diameter,
+                       FLength diameter,
                        double rpm,
-                       Length offset)
+                       FLength offset)
         : motors(motors),
           diameter(to_in(diameter)),
           rpm(rpm),
@@ -193,9 +193,9 @@ class OdometryTracking : public TrackingWheel {
           offset(offset) {}
 
     OdometryTracking(pros::Rotation* rotation_sensor,
-                     Length diameter,
+                     FLength diameter,
                      double gear_ratio,
-                     Length offset)
+                     FLength offset)
         : rotation_sensor(rotation_sensor),
           diameter(to_in(diameter)),
           gear_ratio(gear_ratio),

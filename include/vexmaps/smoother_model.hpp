@@ -30,31 +30,31 @@ struct SmootherConfig {
 
 class SmootherModel : public LocalizationModel {
   private:
-    Length distance_traveled = 0_m;
-    Time latest_delta_time;
-    Time latest_timestamp;
+    FLength distance_traveled = 0_m;
+    FTime latest_delta_time;
+    FTime latest_timestamp;
 
-    units::Pose global_pose_delta;
-    units::Pose local_pose_delta;
+    units::FPose global_pose_delta;
+    units::FPose local_pose_delta;
 
     // used by pose delta measurement
-    units::Pose last_pose_estimate = units::Pose();
-    units::Pose pose_estimate = units::Pose();
-    units::VelocityPose velocity_estimate = units::VelocityPose();
+    units::FPose last_pose_estimate = units::FPose();
+    units::FPose pose_estimate = units::FPose();
+    units::FVelocityPose velocity_estimate = units::FVelocityPose();
 
-    units::Pose last_local_estimate = units::Pose();
+    units::FPose last_local_estimate = units::FPose();
 
     // measures the local pose deltas of the robot
     LocalizationModel* local_delta_model;
     // measures the global pose of the robot
     LocalizationModel* pose_model;
 
-    Time last_local_delta_timestamp = 0_msec;
-    Time last_pose_timestamp = 0_msec;
+    FTime last_local_delta_timestamp = 0_msec;
+    FTime last_pose_timestamp = 0_msec;
 
     // relatively quick so that we can get the latest updates as fast as
     // possible
-    Time task_delta_time = 8_msec;
+    FTime task_delta_time = 8_msec;
 
     SmootherConfig config;
 
@@ -77,7 +77,7 @@ class SmootherModel : public LocalizationModel {
     // TODO: switch to using doubles for this as computations are cheap
     void update() override {
         std::lock_guard lock(m_mutex);
-        Time current_timestamp = from_msec(pros::millis());
+        FTime current_timestamp = from_msec(pros::millis());
 
         latest_delta_time = current_timestamp - latest_timestamp;
         latest_timestamp = current_timestamp;
@@ -85,22 +85,22 @@ class SmootherModel : public LocalizationModel {
         // TODO: actually only get the global updates instead of all updates
         // from pf or else its likely bad
 
-        Time delta_time = latest_delta_time;
+        FTime delta_time = latest_delta_time;
 
-        Time current_local_delta_timestamp =
+        FTime current_local_delta_timestamp =
           local_delta_model->getLatestUpdateTimestamp();
 
-        Time current_pose_timestamp = pose_model->getLatestUpdateTimestamp();
+        FTime current_pose_timestamp = pose_model->getLatestUpdateTimestamp();
 
-        units::Pose previous_pose_estimate = pose_estimate;
+        units::FPose previous_pose_estimate = pose_estimate;
 
         // calculate the predictions first using the transition equations:
-        units::Pose pose_prediction =
-          units::Pose((pose_estimate + velocity_estimate * delta_time),
+        units::FPose pose_prediction =
+          units::FPose((pose_estimate + velocity_estimate * delta_time),
                       pose_estimate.orientation +
                         velocity_estimate.orientation * delta_time);
 
-        units::VelocityPose velocity_prediction = velocity_estimate;
+        units::FVelocityPose velocity_prediction = velocity_estimate;
 
         // allows multiple sensors to affect the final estimate
         pose_estimate = pose_prediction;
@@ -114,10 +114,10 @@ class SmootherModel : public LocalizationModel {
         // only correct velocity if we have a new pose measurement
         if (current_local_delta_timestamp != last_local_delta_timestamp) {
 
-            Time local_delta_measurement_delta_time =
+            FTime local_delta_measurement_delta_time =
               current_local_delta_timestamp - last_local_delta_timestamp;
 
-            units::Pose pose_delta_measurement =
+            units::FPose pose_delta_measurement =
               local_delta_model->getGlobalPoseDelta();
 
             velocity_estimate.x =
@@ -162,7 +162,7 @@ class SmootherModel : public LocalizationModel {
         // only correct pose if we have a new pose measurement
         if (current_pose_timestamp != last_pose_timestamp &&
             pose_model->getConfidence() != std::nullopt) {
-            units::Pose pose_measurement = pose_model->getPose();
+            units::FPose pose_measurement = pose_model->getPose();
 
             pose_estimate.x =
               pose_estimate.x +
@@ -182,14 +182,14 @@ class SmootherModel : public LocalizationModel {
             applied_global = true;
         }
 
-        global_pose_delta = units::Pose(pose_estimate.x - last_pose_estimate.x,
+        global_pose_delta = units::FPose(pose_estimate.x - last_pose_estimate.x,
                                         pose_estimate.y - last_pose_estimate.y,
                                         pose_estimate.orientation -
                                           last_pose_estimate.orientation);
 
         distance_traveled += global_pose_delta.magnitude();
 
-        Angle avg_angle =
+        FAngle avg_angle =
           last_pose_estimate.orientation + global_pose_delta.orientation / 2.0;
 
         if (applied_local) {
@@ -199,12 +199,12 @@ class SmootherModel : public LocalizationModel {
         local_pose_delta = localToGlobalDelta(global_pose_delta, avg_angle);
     }
 
-    void setPose(units::Pose new_pose) override {
+    void setPose(units::FPose new_pose) override {
         std::lock_guard lock(m_mutex);
         pose_estimate = new_pose;
         last_pose_estimate = new_pose;
         last_local_estimate = new_pose;
-        velocity_estimate = units::VelocityPose();
+        velocity_estimate = units::FVelocityPose();
 
         // since only the local delta from this is used it isn't really needed,
         // however to keep consistency its still set
@@ -213,19 +213,19 @@ class SmootherModel : public LocalizationModel {
         pose_model->setPose(new_pose);
     }
 
-    units::Pose getPose() override {
+    units::FPose getPose() override {
         return pose_estimate;
     }
 
-    units::Pose getLastPose() override {
+    units::FPose getLastPose() override {
         return last_pose_estimate;
     }
 
-    units::Pose getGlobalPoseDelta() override {
+    units::FPose getGlobalPoseDelta() override {
         return global_pose_delta;
     }
 
-    units::Pose getLocalPoseDelta() override {
+    units::FPose getLocalPoseDelta() override {
         return local_pose_delta;
     }
 
@@ -233,20 +233,20 @@ class SmootherModel : public LocalizationModel {
         return std::nullopt;
     }
 
-    Length getDistanceTraveled() override {
+    FLength getDistanceTraveled() override {
         return distance_traveled;
     }
 
-    Time getTaskDeltaTime() override {
+    FTime getTaskDeltaTime() override {
         return task_delta_time;
     }
 
-    Time getLatestUpdateTimestamp() override {
+    FTime getLatestUpdateTimestamp() override {
         return latest_timestamp;
     }
 
     // TODO: make this part of LocalizationModel class
-    Time getLatestDeltaTime() {
+    FTime getLatestDeltaTime() {
         return latest_delta_time;
     }
 
