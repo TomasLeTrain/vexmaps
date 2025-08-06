@@ -9,6 +9,7 @@
 #include "pros/motor_group.hpp"
 #include "units/Angle.hpp"
 #include "units/Pose.hpp"
+#include "units/Vector2D.hpp"
 #include "units/units.hpp"
 #include "vexmaps/localization_model.hpp"
 #include "vexmaps/odometry/tracking_wheel.hpp"
@@ -25,33 +26,21 @@ class OdometryModel : public LocalizationModel {
 
     pros::Imu* imu;
 
-    // cant use units since its floats and precision does matter
-    // all angles in radians, all distances in inches
+    Angle last_imu_angle = 0_stDeg;
 
-    double last_imu_angle;
+    units::V2Position local_delta;
+    units::V2Position global_delta;
+    Angle angle_delta = 0_stDeg;
 
-    double local_x_delta = 0;
-    double local_y_delta = 0;
+    units::Pose pose;
+    units::Pose last_pose;
 
-    double global_y_delta = 0;
-    double global_x_delta = 0;
+    Length distance_traveled;
 
-    double angle_delta = 0;
-
-    double pose_x = 0;
-    double pose_y = 0;
-    double angle = 0;
-
-    double last_pose_x = 0;
-    double last_pose_y = 0;
-    double last_angle = 0;
-
-    double distance_traveled;
+    Time delta_time = 10_msec;
+    Time latest_update_time = 0_sec;
 
     bool use_drivetrain = false;
-
-    FTime delta_time = 10.0_msec;
-    FTime latest_update_time = 0.0_sec;
 
   protected:
     mutable pros::Mutex m_mutex;
@@ -118,7 +107,7 @@ class OdometryModel : public LocalizationModel {
             drivetrain_enabled = true;
         }
 
-        double current_imu_angle = last_imu_angle;
+        Angle current_imu_angle = last_imu_angle;
 
         if (imu == nullptr) {
             printf("WARNING: IMU IS NULL - Check config for a nullptr!\n");
@@ -130,7 +119,7 @@ class OdometryModel : public LocalizationModel {
         } else {
             // imu is installed
             if (std::isfinite(imu->get_rotation())) {
-                current_imu_angle = imu->get_rotation() * (M_PI / 180.0);
+                current_imu_angle = from_stDeg(imu->get_rotation());
             } else {
                 printf(
                   "WARNING: IMU NOT FINITE - Might not be calibrated or " "did " "not " "cali" "brat" "e " "prop" "erly" "!" "\n");
@@ -138,146 +127,148 @@ class OdometryModel : public LocalizationModel {
             }
         }
 
-        double imu_angle_delta = current_imu_angle - last_imu_angle;
+        // delta is in imu system
+        Angle imu_angle_delta = current_imu_angle - last_imu_angle;
 
-        // makes it so that we dont have to deal with compass -> std rad
-        // conversion
-        if (imu_angle_delta != 0) {
+        if (imu_angle_delta.internal() != 0) {
             angle_delta = -imu_angle_delta;
         } else {
-            angle_delta = 0;
+            angle_delta = 0_stDeg;
         }
 
         // update angle
-        angle = angle_delta + last_angle;
+        pose.orientation = angle_delta + last_pose.orientation;
 
-        local_y_delta = 0;
-        local_x_delta = 0;
+        local_delta = units::V2Position();
 
-        double x_tracker_count = 0;
-        double y_tracker_count = 0;
+        int x_tracker_count = 0;
+        int y_tracker_count = 0;
 
-        // clang-format off
-        if (fabs(angle_delta) < 1e-6) {
+        if (units::abs(angle_delta).internal() < 1e-6) {
             if (drivetrain_enabled) {
-                local_x_delta += (left_tracker->getDeltaDistance() + right_tracker->getDeltaDistance()) / 2.0;
-                x_tracker_count += 1.0;
+                local_delta.x += (left_tracker->getDeltaDistance() +
+                                  right_tracker->getDeltaDistance()) /
+                                 2.0;
+                x_tracker_count++;
             }
 
             for (auto&& tracker : vertical_trackers) {
-                if(tracker->getAvailable()){
-                    local_x_delta += tracker->getDeltaDistance();
-                    x_tracker_count += 1.0;
+                if (tracker->getAvailable()) {
+                    local_delta.x += tracker->getDeltaDistance();
+                    x_tracker_count++;
                 }
             }
 
             for (auto&& tracker : horizontal_trackers) {
-                if(tracker->getAvailable()){
-                    local_y_delta += tracker->getDeltaDistance();
-                    y_tracker_count += 1.0;
+                if (tracker->getAvailable()) {
+                    local_delta.y += tracker->getDeltaDistance();
+                    y_tracker_count++;
                 }
             }
         } else {
-            double sin_multiplier = 2.0 * sin(angle_delta / 2.0);
+            double sin_multiplier = 2.0 * units::sin(angle_delta / 2.0);
 
             if (drivetrain_enabled) {
-                double local_dt_left_delta = sin_multiplier * (left_tracker->getDeltaDistance() / angle_delta - left_tracker->getOffset());
-                double local_dt_right_delta = sin_multiplier * (right_tracker->getDeltaDistance() / angle_delta - right_tracker->getOffset());
-                local_x_delta += (local_dt_left_delta + local_dt_right_delta) / 2.0;
-                x_tracker_count += 1.0;
+                Length local_dt_left_delta =
+                  sin_multiplier *
+                  (left_tracker->getDeltaDistance() / angle_delta.internal() -
+                   left_tracker->getOffset());
+
+                Length local_dt_right_delta =
+                  sin_multiplier *
+                  (right_tracker->getDeltaDistance() / angle_delta.internal() -
+                   right_tracker->getOffset());
+
+                local_delta.x +=
+                  (local_dt_left_delta + local_dt_right_delta) / 2.0;
+                x_tracker_count++;
             }
 
             for (auto&& tracker : vertical_trackers) {
-                if(tracker->getAvailable()){
-                    local_x_delta += sin_multiplier * (tracker->getDeltaDistance() / angle_delta - tracker->getOffset());
-                    // printf("\\left(%f,",tracker->getDeltaDistance() / angle_delta);
-                    x_tracker_count += 1.0;
+                if (tracker->getAvailable()) {
+                    local_delta.x +=
+                      sin_multiplier *
+                      (tracker->getDeltaDistance() / angle_delta.internal() -
+                       tracker->getOffset());
+                    // printf("\\left(%f,",tracker->getDeltaDistance() /
+                    // angle_delta);
+                    x_tracker_count++;
                 }
             }
 
             for (auto&& tracker : horizontal_trackers) {
-                if(tracker->getAvailable()){
-                    local_y_delta += sin_multiplier * (tracker->getDeltaDistance() / angle_delta - tracker->getOffset());
-                    // printf("%f\\right),\n",tracker->getDeltaDistance() / angle_delta);
-                    y_tracker_count += 1.0;
+                if (tracker->getAvailable()) {
+                    local_delta.y +=
+                      sin_multiplier *
+                      (tracker->getDeltaDistance() / angle_delta.internal() -
+                       tracker->getOffset());
+                    // printf("%f\\right),\n",tracker->getDeltaDistance() /
+                    // angle_delta);
+                    y_tracker_count++;
                 }
             }
         }
-        // clang-format on
 
-        if (x_tracker_count > 1) local_x_delta /= x_tracker_count;
-        if (y_tracker_count > 1) local_y_delta /= y_tracker_count;
+        if (x_tracker_count > 1)
+            local_delta.x /= static_cast<double>(x_tracker_count);
+        if (y_tracker_count > 1)
+            local_delta.y /= static_cast<double>(y_tracker_count);
 
         // Update global position using polar coordinates
-        double avg_angle = (angle + last_angle) / 2.0;
+        Angle avg_angle = (pose.orientation + last_pose.orientation) / 2.0;
 
-        double sina = sin(avg_angle);
-        double cosa = cos(avg_angle);
+        double sina = units::sin(avg_angle);
+        double cosa = units::cos(avg_angle);
 
-        global_x_delta = local_x_delta * cosa - local_y_delta * sina;
-        global_y_delta = local_x_delta * sina + local_y_delta * cosa;
+        global_delta.x = local_delta.x * cosa - local_delta.y * sina;
+        global_delta.y = local_delta.x * sina + local_delta.y * cosa;
 
-        last_pose_x = pose_x;
-        last_pose_y = pose_y;
+        last_pose = pose;
 
-        pose_x += global_x_delta;
-        pose_y += global_y_delta;
+        // only changes x/y, not orientation
+        pose += global_delta;
 
-        distance_traveled += sqrt((global_x_delta * global_x_delta) +
-                                  (global_y_delta * global_y_delta));
+        distance_traveled += global_delta.magnitude();
 
         // update last- variables
         last_imu_angle = current_imu_angle;
-        last_angle = angle;
-
         latest_update_time = from_msec(pros::millis());
     }
 
     void setPose(units::Pose new_pose) override {
         std::lock_guard lock(m_mutex);
-
-        pose_x = to_in(new_pose.x);
-        pose_y = to_in(new_pose.y);
-        angle = new_pose.orientation.internal();
+        pose = new_pose;
 
         // last_set_orientation = new_pose.orientation.internal();
         // imu->set_heading(0);
 
-        last_pose_x = pose_x;
-        last_pose_y = pose_y;
-        last_angle = angle;
+        last_pose = pose;
     }
 
     // getters
     units::Pose getPose() override {
-        return units::Pose(from_in(pose_x), from_in(pose_y), from_stRad(angle));
+        return pose;
     }
 
     /**
      * @brief gets the previous available pose
      */
     units::Pose getLastPose() override {
-        return units::Pose(from_in(last_pose_x),
-                           from_in(last_pose_y),
-                           from_stRad(last_angle));
+        return last_pose;
     }
 
     /**
      * @brief Get latest global pose delta
      */
     units::Pose getGlobalPoseDelta() override {
-        return units::Pose(from_in(global_x_delta),
-                           from_in(global_y_delta),
-                           from_stRad(angle_delta));
+        return units::Pose(global_delta, angle_delta);
     }
 
     /**
      * @brief Get latest local pose delta
      */
     units::Pose getLocalPoseDelta() override {
-        return units::Pose(from_in(local_x_delta),
-                           from_in(local_y_delta),
-                           from_stRad(angle_delta));
+        return units::Pose(local_delta, angle_delta);
     }
 
     /**
@@ -297,7 +288,7 @@ class OdometryModel : public LocalizationModel {
      * @return distance traveled by the robot
      */
     Length getDistanceTraveled() override {
-        return from_in(distance_traveled);
+        return distance_traveled;
     }
 
     Time getTaskDeltaTime() override {

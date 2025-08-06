@@ -5,6 +5,7 @@
 #include "pros/motor_group.hpp"
 #include "pros/motors.h"
 #include "pros/rotation.hpp"
+#include "units/Angle.hpp"
 #include "units/units.hpp"
 #include <climits>
 #include <cmath>
@@ -22,9 +23,9 @@ class TrackingWheel {
 
     virtual void init() = 0;
     virtual void update() = 0;
-    virtual double getDeltaDistance() = 0;
+    virtual Length getDeltaDistance() = 0;
     virtual trackingOrientation getTrackingWheelType() = 0;
-    virtual double getOffset() = 0;
+    virtual Length getOffset() = 0;
     virtual bool getAvailable() = 0;
     virtual ~TrackingWheel() = default;
 };
@@ -40,56 +41,47 @@ inline double getGearingTicks(pros::MotorGears gearing) {
     return gearing_multiplier;
 }
 
-inline double getGearingRPM(pros::MotorGears gearing) {
-    double gearing_multiplier = 1;
+inline AngularVelocity getGearingRPM(pros::MotorGears gearing) {
+    AngularVelocity gearing_multiplier = 200_rpm;
     switch (gearing) {
-        case pros::MotorGears::blue: gearing_multiplier = 600.0; break;
-        case pros::MotorGears::green: gearing_multiplier = 200.0; break;
-        case pros::MotorGears::red: gearing_multiplier = 100.0; break;
-        default: gearing_multiplier = 200.0; break;
+        case pros::MotorGears::blue: gearing_multiplier = 600_rpm; break;
+        case pros::MotorGears::green: gearing_multiplier = 200_rpm; break;
+        case pros::MotorGears::red: gearing_multiplier = 100_rpm; break;
+        default: gearing_multiplier = 200_rpm; break;
     }
     return gearing_multiplier;
 }
 
 class MotorGroupTracking : public TrackingWheel {
   private:
-    double last_distance;
-    double delta_distance;
+    Length last_distance;
+    Length delta_distance;
 
-    double diameter;
-    double rpm;
-    double offset;
+    Length diameter;
+    AngularVelocity rpm;
+    Length offset;
 
     pros::MotorGroup* motors;
 
   public:
     MotorGroupTracking(pros::MotorGroup* motors,
-                       double diameter,
-                       double rpm,
-                       double offset)
+                       Length diameter,
+                       AngularVelocity rpm,
+                       Length offset)
         : motors(motors),
           diameter(diameter),
           rpm(rpm),
           offset(offset) {}
 
-    MotorGroupTracking(pros::MotorGroup* motors,
-                       FLength diameter,
-                       double rpm,
-                       FLength offset)
-        : motors(motors),
-          diameter(to_in(diameter)),
-          rpm(rpm),
-          offset(to_in(offset)) {}
+    Length calculateDistance() {
+        Length distance = 0_in;
 
-    double calculateDistance() {
-        double distance = 0.0;
-
-        if(motors == nullptr){
+        if (motors == nullptr) {
             printf("odometry: motor group is a nullptr!\n");
-            return 0.0;
+            return 0_in;
         }
 
-        double used_motor_count = 0;
+        int used_motor_count = 0;
 
         for (int i = 0; i < motors->size(); i++) {
             int port = abs(motors->get_port(i));
@@ -99,8 +91,6 @@ class MotorGroupTracking : public TrackingWheel {
 
             // only include if plugged in
             if (plugged_device_type == pros::DeviceType::motor) {
-                used_motor_count += 1.0;
-
                 pros::MotorGears gearing = motors->get_gearing(i);
                 pros::MotorUnits encoder = motors->get_encoder_units(i);
 
@@ -117,20 +107,25 @@ class MotorGroupTracking : public TrackingWheel {
                     case pros::MotorUnits::rotations:
                         rotation_multiplier = 1;
                         break;
-                    default:
-                        rotation_multiplier = 1;
-                        break;
+                    default: rotation_multiplier = 1; break;
                 }
 
-                double position = motors->get_position(i);
+                // number of rotations the wheel has traveled
+                double rotations =
+                  motors->get_position(i) * rotation_multiplier;
 
-                distance += (position * rotation_multiplier) *
-                            (diameter * M_PI) * (this->rpm / getGearingRPM(gearing));
+                const Length circumference = diameter * M_PI;
+
+                // rotations * circumference of wheel
+                distance += rotations * circumference *
+                            (this->rpm / getGearingRPM(gearing));
+
+                used_motor_count++;
             }
         }
 
-        if(used_motor_count != 0.0)
-            distance /= used_motor_count;
+        if (used_motor_count != 0)
+            distance /= static_cast<double>(used_motor_count);
         return distance;
     }
 
@@ -139,18 +134,18 @@ class MotorGroupTracking : public TrackingWheel {
     }
 
     void update() override {
-        double current_distance = calculateDistance();
+        Length current_distance = calculateDistance();
 
         delta_distance = current_distance - last_distance;
 
         last_distance = current_distance;
     }
 
-    double getDeltaDistance() override {
+    Length getDeltaDistance() override {
         return delta_distance;
     }
 
-    double getOffset() override {
+    Length getOffset() override {
         return offset;
     }
 
@@ -168,38 +163,32 @@ class MotorGroupTracking : public TrackingWheel {
 template<trackingOrientation tracking_orientation>
 class OdometryTracking : public TrackingWheel {
   private:
-    double last_distance;
+    Length last_distance;
     int32_t last_position;
 
-    double delta_distance;
+    Length delta_distance;
 
-    double offset;
+    Length offset;
 
-    double diameter;
+    Length diameter;
     double gear_ratio;
 
     bool available = true;
+
+    // makes it so that when available changes to true, it is not immediately used
+    bool available_changed = false;
 
     pros::Rotation* rotation_sensor;
 
   public:
     OdometryTracking(pros::Rotation* rotation_sensor,
-                     double diameter,
-                     double gear_ratio,
-                     double offset)
-        : rotation_sensor(rotation_sensor),
-          diameter(diameter),
-          gear_ratio(gear_ratio),
-          offset(offset) {}
-
-    OdometryTracking(pros::Rotation* rotation_sensor,
                      FLength diameter,
                      double gear_ratio,
                      FLength offset)
         : rotation_sensor(rotation_sensor),
-          diameter(to_in(diameter)),
+          diameter(diameter),
           gear_ratio(gear_ratio),
-          offset(to_in(offset)) {}
+          offset(offset) {}
 
     void init() override {
         if (rotation_sensor == nullptr) {
@@ -224,24 +213,36 @@ class OdometryTracking : public TrackingWheel {
     void update() override {
         if (rotation_sensor == nullptr) {
             // doesn't print always to let user see other possible messsages
-            // printf("WARNING: ROTATION IS NULL - Check config for nullptr! - "
-            // "remove from list of trackers if this tracker is not used\n");
+            if(available){
+                printf("WARNING: ROTATION IS NULL - Check config for nullptr! - "
+                        "remove from list of trackers if this tracker is not used\n");
+            }
             available = false;
+            available_changed = false;
             return;
         }
 
         if (!rotation_sensor->is_installed()) {
             // doesn't print always to let user see other possible messsages
-            // printf("WARNING: ROTATION NOT CONNECTED!\n");
+            if(available){
+                printf("WARNING: ROTATION NOT CONNECTED!\n");
+            }
             available = false;
+            available_changed = false;
             return;
         }
 
+        // if the sensor was not available the function would have returned by now
+        // this means that the sensor is recoverable
         if (!available) {
             // we could be able to recover and still use the tracker
             rotation_sensor->set_data_rate(5);
             rotation_sensor->reset_position();
             last_position = rotation_sensor->get_position();
+
+            // change available to not run through this again
+            available = true;
+            available_changed = true;
 
             // we cant really know the delta right now so we will returning with
             // available set to false but if its connected it will become true
@@ -251,31 +252,33 @@ class OdometryTracking : public TrackingWheel {
         // rotation_sensor exists and is plugged in
 
         available = true;
+        available_changed = false;
 
-        int32_t current_position = last_position;
-        current_position = rotation_sensor->get_position();
-        int32_t position_delta = 0;
+        int32_t current_position = rotation_sensor->get_position();
 
         // kept track in int to avoid precision loss
-        position_delta = current_position - last_position;
+        // number of degrees the rotation sensor has spun
+        int32_t position_delta = current_position - last_position;
+
+        const Length circumference = diameter * M_PI;
 
         delta_distance =
-          ((static_cast<double>(position_delta) * diameter * M_PI) / 36000.0) /
+          ((static_cast<double>(position_delta) * circumference) / 36000.0) /
           gear_ratio;
 
         last_position = current_position;
     }
 
-    double getDeltaDistance() override {
+    Length getDeltaDistance() override {
         return delta_distance;
     }
 
-    double getOffset() override {
+    Length getOffset() override {
         return offset;
     }
 
     bool getAvailable() override {
-        return available;
+        return available && !available_changed;
     }
 
     trackingOrientation getTrackingWheelType() override {

@@ -2,6 +2,7 @@
 #include "pros/abstract_motor.hpp"
 #include "pros/apix.h"
 #include "pros/misc.h"
+#include "units/Angle.hpp"
 #include "units/units.hpp"
 #include "vexmaps/api.hpp"
 #include <initializer_list>
@@ -64,12 +65,12 @@ pros::MotorGroup
 pros::Rotation verticalEnc(-7);
 pros::Rotation horizontalEnc(-12);
 
-double target_rpm = 480;
+AngularVelocity target_rpm = 480_rpm;
 
-FLength dt_diameter = 2.75_in;
-FLength track_width = 10.5_in;
+Length dt_diameter = 2.75_in;
+Length track_width = 10.5_in;
 
-FLength odom_wheel_diameter = 1.995_in;
+Length odom_wheel_diameter = 1.995_in;
 
 vexmaps::MotorGroupTracking
   left_dt_tracker(&leftMotors, dt_diameter, target_rpm, (-track_width) / 2);
