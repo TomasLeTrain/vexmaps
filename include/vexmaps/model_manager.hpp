@@ -70,13 +70,10 @@ class ModelManager : public LocalizationModel {
     // initializes each model
     void init() override {
         for (auto model : models) {
-            printf("processing: %s\n", model.name.c_str());
             model.model->init();
-            printf("finished init\n");
             pros::delay(init_timeout);
         }
 
-        printf("creating tasks\n");
         // create each of the tasks
         createTasks();
     }
@@ -89,9 +86,8 @@ class ModelManager : public LocalizationModel {
      */
     void createTasks() {
         for (auto model : models) {
-            printf("creating: %s\n", model.name.c_str());
             pros::Task model_task {
-                [&] {
+                [=] {
                     while (true) {
                         uint32_t current_time = pros::millis();
                         model.model->update();
@@ -103,7 +99,6 @@ class ModelManager : public LocalizationModel {
                 },
                 model.name.c_str()
             };
-            printf("finished making it\n");
             pros::delay(task_creation_timeout);
         }
     }

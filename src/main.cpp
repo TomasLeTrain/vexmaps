@@ -7,7 +7,8 @@
 #include "vexmaps/api.hpp"
 #include <initializer_list>
 
-constexpr size_t particle_count = 16384;
+constexpr size_t particle_count = 500;
+// constexpr size_t particle_count = 16384;
 // constexpr size_t particle_count = 30000;
 constexpr bool general_logging = false;
 
@@ -121,16 +122,12 @@ vexmaps::ModelManager model_manager(
   &smoother_model);
 
 void initialize() {
-    printf("init1\n");
     pros::c::serctl(SERCTL_DISABLE_COBS,NULL);
     // reset the imu
-    printf("init2\n");
     imu.reset(true);
 
     // initialize all models and create their tasks
-    printf("init3\n");
-    // model_manager.init();
-    printf("init4\n");
+    model_manager.init();
 }
 
 void disabled() {}
@@ -141,52 +138,51 @@ void autonomous() {}
 
 void opcontrol() {
     // set the pose
-    printf("doing stuff\n");
-    // model_manager.setPose({ 48_in, -48_in, 0_stDeg });
+    model_manager.setPose({ 48_in, -48_in, 0_stDeg });
     // printf("doing more stuff\n");
-    // bool manual_logging = true;
-    //
-    // while (true) {
-    //     if (manual_logging) {
-    //         int start_time = pros::millis();
-    //         printf(
-    //           "start generation\nstart distances\nend distances\nstart " "parti" "cles" "\n");
-    //
-    //         printf("%.1f %.1f %.1f\n",
-    //                odom_model.getPose().x.convert(in),
-    //                odom_model.getPose().y.convert(in),
-    //                0.0);
-    //         printf("%.1f %.1f %.1f\n",
-    //                pf_model.getPose().x.convert(in),
-    //                pf_model.getPose().y.convert(in),
-    //                5.0);
-    //         printf("%.1f %.1f %.1f\n",
-    //                smoother_model.getPose().x.convert(in),
-    //                smoother_model.getPose().y.convert(in),
-    //                10.0);
-    //
-    //         printf(
-    //           "end particles\ntotal weight: 0, time taken: 30000, " "timestamp:" " %d\n",
-    //           start_time);
-    //         printf("things done:1,1,0,%d\n", particle_count);
-    //         printf("prediction:%.1f,%.1f,%.1f\n",
-    //                smoother_model.getPose().x.convert(in),
-    //                smoother_model.getPose().y.convert(in),
-    //                smoother_model.getPose().orientation.convert(deg));
-    //         printf("end generation\n");
-    //     }
-    //
-    //     if (master.get_digital_new_press(pros::E_CONTROLLER_DIGITAL_A)) {
-    //         smoother_model.setPose({ 48_in, -48_in, 90_stDeg });
-    //     }
-    //
-    //     // // Arcade control scheme
-    //     int dir = master.get_analog(
-    //       ANALOG_LEFT_Y); // Gets amount forward/backward from left joystick
-    //     int turn = master.get_analog(
-    //       ANALOG_RIGHT_X); // Gets the turn left/right from right joystick
-    //     leftMotors.move(dir + turn); // Sets left motor voltage
-    //     rightMotors.move(dir - turn); // Sets right motor voltage
-    //     pros::delay(20); // Run for 20 ms then update
-    // }
+    bool manual_logging = true;
+
+    while (true) {
+        if (manual_logging) {
+            int start_time = pros::millis();
+            printf(
+              "start generation\nstart distances\nend distances\nstart " "parti" "cles" "\n");
+
+            printf("%.1f %.1f %.1f\n",
+                   odom_model.getPose().x.convert(in),
+                   odom_model.getPose().y.convert(in),
+                   0.0);
+            printf("%.1f %.1f %.1f\n",
+                   pf_model.getPose().x.convert(in),
+                   pf_model.getPose().y.convert(in),
+                   5.0);
+            printf("%.1f %.1f %.1f\n",
+                   smoother_model.getPose().x.convert(in),
+                   smoother_model.getPose().y.convert(in),
+                   10.0);
+
+            printf(
+              "end particles\ntotal weight: 0, time taken: 30000, " "timestamp:" " %d\n",
+              start_time);
+            printf("things done:1,1,0,%d\n", particle_count);
+            printf("prediction:%.1f,%.1f,%.1f\n",
+                   smoother_model.getPose().x.convert(in),
+                   smoother_model.getPose().y.convert(in),
+                   smoother_model.getPose().orientation.convert(deg));
+            printf("end generation\n");
+        }
+
+        if (master.get_digital_new_press(pros::E_CONTROLLER_DIGITAL_A)) {
+            smoother_model.setPose({ 48_in, -48_in, 90_stDeg });
+        }
+
+        // // Arcade control scheme
+        int dir = master.get_analog(
+          ANALOG_LEFT_Y); // Gets amount forward/backward from left joystick
+        int turn = master.get_analog(
+          ANALOG_RIGHT_X); // Gets the turn left/right from right joystick
+        leftMotors.move(dir + turn); // Sets left motor voltage
+        rightMotors.move(dir - turn); // Sets right motor voltage
+        pros::delay(20); // Run for 20 ms then update
+    }
 }
