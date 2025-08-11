@@ -5,3 +5,4 @@
 #include "localization_model.hpp"
 #include "particle_filter_model.hpp"
 #include "smoother_model.hpp"
+#include "model_manager.hpp"

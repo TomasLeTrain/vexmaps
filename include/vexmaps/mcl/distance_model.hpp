@@ -68,7 +68,7 @@ class DistanceSensorModel : public Sensor {
         if (distance_sensor == nullptr || !distance_sensor->is_installed()) {
             // not available, just set exit to true
             exit = true;
-            printf("ONE OF THE DISTANCE SENSORS ARE NOT CONNECTED CORRECTLY!!");
+            printf("ONE OF THE DISTANCE SENSORS ARE NOT CONNECTED CORRECTLY!!\n");
             return;
         }
 
