@@ -1,12 +1,13 @@
 #include "tests/circle_intersection_test.hpp"
 #include "pros/rtos.h"
-#include "vexmaps/mcl/intersection_math.hpp"
+#include "vexmaps/mcl/circle_intersection.hpp"
 #include <cmath>
 #include <iostream>
 #include <vector>
 
 void testCircleIntersections() {
-    int n = (40000 / 16) * 16;
+    // int n = (40000 / 16) * 16;
+    int n = (100 / 16) * 16;
 
     std::vector<float> x(n);
     std::vector<float> y(n);
@@ -29,7 +30,7 @@ void testCircleIntersections() {
     x[offset+1] = 0;
     y[offset+1] = 2;
 
-    // should be undefined
+    // ray does not intersect, should be undefined
     x[offset+2] = -1;
     y[offset+2] = -1;
 
@@ -52,14 +53,15 @@ void testCircleIntersections() {
     std::cout << "vx,vy: " << vx << " " << vy << std::endl;
 
     auto start_time = pros::c::micros();
-    vexmaps::circleIntersection(res.data(), x.data(), y.data(), n, vx, vy, ox, oy, r);
+    // vexmaps::circleIntersection(res.data(), x.data(), y.data(), n, vx, vy, ox, oy, r);
+    vexmaps::circleCenterIntersection(res.data(), x.data(), y.data(), n, vx, vy, ox, oy, r);
     auto end_time = pros::c::micros();
 
     // running in the simulator gives 25.813 ms to run 40,000 points, meaning 1549.606 particles / ms
     std::cout << "time taken: " << end_time - start_time  << std::endl;
 
-    // for(auto e : res){
-    //     std::cout << e << "\n";
-    // }
+    for(auto e : res){
+        std::cout << e << "\n";
+    }
     std::cout << std::endl;
 }

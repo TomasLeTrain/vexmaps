@@ -1,100 +1,15 @@
-# WARNING: the sqrt function that gets used might be undefined at 0
-
 .text
 .syntax unified
 
-.global circleIntersection
-.p2align 4
-.type circleIntersection, %function
-.thumb
-.thumb_func
-circleIntersection:
-
-# void circleIntersection(
-# r0 = float* res,
-# r1 = float* x,
-# r2 = float* y,
+# most of the circle math involved
+# after the registers have the following layout:
 #
-# r3 = len,
-#
-# s0 = float vx,
-# s1 = float vy,
-#
-# s2 = float ox,
-# s3 = float oy,
-# s4 = float r
-# );
-
-
-# q0 - floats
-# q1 - r^2
-# q15 - infinity
-# q2 - q14 - 13 available registers
-
-# 4 dx
-# 4 dy
-# 4 dots
-# 12 registers total
-
-# remove dx/dy, now have 4 squared cross
-# remove squared cross, have 4 g
-# then have 4 initial guess for sqrt_g
-# then add 4 for the guess squared
-# then remove it
-# then add 4 for each mask
-
-# registers:
-# dx -> squared cross ->   -> sqrt_g ->          ->            -> sqrt_g ->
-# dy ->               -> g ->        -> sqrt_g_2 -> newton_step->        -> res ->
-# dots                                                                   ->     -> mask -> res
-
-
-# dx -> squared cross ->   ->         -> res
-# dy ->               -> g ->  sqrt_g -> 
-# dots                                ->     -> mask-> res
-
-# not possible since at once we need g, sqrt_g, and sqrt_g_2
-# might need to move ops around such that 
-
-# active registers:
-# q2 - q5  = dx / squared cross / sqrt_g / infinity
-# q6 - q9 = dy / g / mask
-# q10 - q13 = dots / res / res
-
-# static registers - don't get changed across loops:
-# dx,dy = q0
-# r^2 = q1
-# ox = q14
-# dy = q15
-
-# precomputations get performed here
-
-# save registers
-vpush {q4-q7}
-
-# calculate r^2
-vmul.f32 d2, d2, d2
-
-# store into q1 register
-vdup.f32 q1, d2[0]
-
-# store ox and oy
-vdup.f32 q14, d1[0] // ox
-vdup.f32 q15, d1[1] // oy
-
-# main loop logic
-.L_loop:
-    vld1.32  {q2}, [r1]! @# x
-    vld1.32  {q6}, [r2]! @# y
-
-    vld1.32  {q3}, [r1]! @# x
-    vld1.32  {q7}, [r2]! @# y
-
-    vld1.32  {q4}, [r1]! @# x
-    vld1.32  {q8}, [r2]! @# y
-
-    vld1.32  {q5}, [r1]! @# x
-    vld1.32  {q9}, [r2]! @# y
+# q2-q5 = free registers
+# q6-q9 = sqrt(g)
+# q10-q13 = dot products
+.macro mainCircleRoutine
+    vldmia r1!, {q2-q5} @# x
+    vldmia r2!, {q6-q9} @# y
 
     vsub.f32 q2, q14, q2 @# dx = ox - x
     vsub.f32 q6, q15, q6 @# dy = oy - y
@@ -188,6 +103,66 @@ vdup.f32 q15, d1[1] // oy
     vmul.f32 q7, q3, q7
     vmul.f32 q8, q4, q8
     vmul.f32 q9, q5, q9
+.endm
+
+
+.global circleIntersection
+.p2align 4
+.type circleIntersection, %function
+.thumb
+.thumb_func
+circleIntersection:
+
+# void circleIntersection(
+# r0 = float* res,
+# r1 = float* x,
+# r2 = float* y,
+#
+# r3 = uint32_t len,
+#
+# s0 = float vx,
+# s1 = float vy,
+#
+# s2 = float ox,
+# s3 = float oy,
+# s4 = float r
+# );
+
+# registers:
+# dx -> squared cross ->   ->         -> res
+# dy ->               -> g ->  sqrt_g -> 
+# dots                                ->     -> mask-> res
+
+# active registers:
+# q2 - q5  = dx / squared cross / sqrt_g / infinity
+# q6 - q9 = dy / g / mask
+# q10 - q13 = dots / res / res
+
+# static registers - don't get changed across loops:
+# dx,dy = q0
+# r^2 = q1
+# ox = q14
+# dy = q15
+
+# precomputations get performed here
+
+# save registers
+vpush {q4-q7}
+
+# calculate r^2
+vmul.f32 d2, d2, d2
+
+# store into q1 register
+vdup.f32 q1, d2[0]
+
+# store ox and oy
+vdup.f32 q14, d1[0] // ox
+vdup.f32 q15, d1[1] // oy
+
+# main loop logic
+.CircleIntersectionLoop:
+# executes most of the routine
+    mainCircleRoutine
 
     vsub.f32 q2, q10, q6 @# res = dot - sqrt(g)
     vsub.f32 q3, q11, q7 @# res = dot - sqrt(g)
@@ -215,13 +190,71 @@ vdup.f32 q15, d1[1] // oy
     subs r3, r3, #16
 
 # res is now computed, just need to store the result
-    vst1.32  {q10}, [r0]!
-    vst1.32  {q11}, [r0]!
-    vst1.32  {q12}, [r0]!
-    vst1.32  {q13}, [r0]!
+    vstmia r0!, {q10-q13}
 
 # other part of loop
-    bgt .L_loop
+    bgt .CircleIntersectionLoop
+
+# end of function
+vpop {q4-q7}
+bx lr
+
+.global circleCenterIntersection 
+.p2align 4
+.type circleCenterIntersection, %function
+.thumb
+.thumb_func
+circleCenterIntersection:
+# precomputations get performed here
+
+# save registers
+vpush {q4-q7}
+
+# calculate r^2
+vmul.f32 d2, d2, d2
+
+# store into q1 register
+vdup.f32 q1, d2[0]
+
+# store ox and oy
+vdup.f32 q14, d1[0] // ox
+vdup.f32 q15, d1[1] // oy
+
+# main loop logic
+.CircleCenterLoop:
+    mainCircleRoutine
+
+# keeps original dot intact, as that is the final returned result
+    vsub.f32 q2, q10, q6 @# res = dot - sqrt(g)
+    vsub.f32 q3, q11, q7 @# res = dot - sqrt(g)
+    vsub.f32 q4, q12, q8 @# res = dot - sqrt(g)
+    vsub.f32 q5, q13, q9 @# res = dot - sqrt(g)
+
+# check if res is valid
+
+# creates the mask - compare with zero - maybe needs more checks
+    vcge.f32 q6, q2, #0  @# mask = res >= 0
+    vcge.f32 q7, q3, #0  @# mask = res >= 0
+    vcge.f32 q8, q4, #0  @# mask = res >= 0
+    vcge.f32 q9, q5, #0  @# mask = res >= 0
+
+# loads roughly 8.589935 * 10^9
+    vmov.i32 q2, 0x50000000
+
+# mask res with infinity/big number
+    vbsl.f32 q6, q10, q2 @# mask ? dot : infinity
+    vbsl.f32 q7, q11, q2 @# mask ? dot : infinity
+    vbsl.f32 q8, q12, q2 @# mask ? dot : infinity
+    vbsl.f32 q9, q13, q2 @# mask ? dot : infinity
+
+# decrement len, set flags
+    subs r3, r3, #16
+
+# res is now computed, just need to store the result
+    vstm r0!, {q6-q9}
+
+# other part of loop
+    bgt .CircleCenterLoop
 
 # end of function
 vpop {q4-q7}

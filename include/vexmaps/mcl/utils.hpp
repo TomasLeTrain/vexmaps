@@ -1,7 +1,7 @@
 #pragma once
 
-#include "units/units.hpp"
 #include "units/Pose.hpp"
+#include "units/units.hpp"
 #include "vexmath/entropy.hpp"
 #include <arm_neon.h>
 #include <cmath>
@@ -11,12 +11,14 @@ namespace vexmaps {
 // definition of useful constants
 constexpr FLength wall_length = (140.1_in) / 2.0;
 
+// rng used throughout the filter
 inline RobotEntropy<uint32_t> robot_rng;
 
 inline std::ranlux24_base rng(robot_rng());
 
 // rotates pose around origin. Does not change orientation
-inline units::FPose FrotatePose(const units::FPose& point, const FAngle& angle) {
+inline units::FPose FrotatePose(const units::FPose& point,
+                                const FAngle& angle) {
     // does not use units::sin/cos to avoid cast from Number (double) to float
     const float sina = std::sin(angle.internal());
     const float cosa = std::cos(angle.internal());
@@ -119,7 +121,17 @@ inline float32x4_t VexpDistribution(float32x4_t x) {
 // ensures distribution's integral is always 1
 template<double exp_l>
 inline float expNormalizationFactor(float v) {
-    return 1.0 / (1.0 - std::exp(-v));
+    return 1.0 / (1.0 - std::exp(-v * exp_l));
+}
+
+// taylor approximation
+// only accurate on an approximate range of (0,2)
+template<double exp_l>
+inline float expNormalizationFactorApproximation(float v) {
+    constexpr float c0 = 1.0 / 12.0;
+    v *= exp_l;
+
+    return (1 / v) + (v * c0) + 0.5;
 }
 
 } // namespace vexmaps
