@@ -90,6 +90,7 @@ class ModelManager : public LocalizationModel {
                 [=] {
                     while (true) {
                         uint32_t current_time = pros::millis();
+                        // the models should be global, so they should outlive the program? 
                         model.model->update();
 
                         pros::c::task_delay_until(

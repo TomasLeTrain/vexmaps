@@ -1,6 +1,7 @@
 #pragma once
 
 #include "arm_neon.h"
+#include <bit>
 #include <cstdint>
 
 namespace vexmaps {
@@ -61,15 +62,101 @@ extern "C" void circleCenterIntersection(float* res,
                                          float oy,
                                          float r);
 
+extern "C" void asm_raySegmentDistance(float* res,
+                                       float* x,
+                                       float* y,
+
+                                       uint32_t len,
+
+                                       float ra,
+                                       float sa,
+
+                                       float sb,
+                                       float rb,
+
+                                       float rc,
+                                       float sc);
+
+/**
+ * @brief Calculates distance of a ray with origin at (x,y) with angle
+ * represented by a unit vector (vx,vy) which intersects a line segment with
+ * endpoints (x1,y1) and (x2,y2).
+ *
+ * @param res result array
+ * @param x x component array
+ * @param y y component array
+ * @param len number of points to test
+ * @param vx x component of v vector
+ * @param vy y omponent of v vector
+ * @param x1 x component of first endpoint
+ * @param y1 y component of first endpoint
+ * @param x2 x component of second endpoint
+ * @param y2 y component of second endpoint
+ */
+inline void raySegmentDistance(float* res,
+                               float* x,
+                               float* y,
+                               uint32_t len,
+                               float vx,
+                               float vy,
+                               float x1,
+                               float y1,
+                               float x2,
+                               float y2) {
+    // precalculate some values then call the assembly implementation
+    float dx = x2 - x1;
+    float dy = y2 - y1;
+    float dd = vx * dy - vy * dx;
+    if (dd != 0) {
+        // tx = x - x1
+        // ty = y - y1
+        //
+        // r = (ty * dx - tx * dy) / dd
+        // r = ((y - y1) * dx - (x - x1) * dy) / dd
+        // r = (y - y1) * dx / dd - (x - x1) * dy / dd
+        // r = y * dx / dd - y1 * dx / dd - x * dy / dd - x1 * dy / dd
+        // r = (y * dx - x * dy) / dd - (y1 * dx - x1 * dy) / dd
+        // r = y * (dx / dd) - x * (dy / dd) - c
+        // r = a * y - b * x - c
+        // where
+        // a = dx / dd
+        // b = dy / dd
+        // c = (y1 * dx - x1 * dy) / dd
+        //
+        // using the same logic:
+        // s = a * y - b * x - c
+        // a = vx / dd
+        // b = vy / dd
+        // c = (y1 * vx - x1 * vy) / dd
+
+        float ra = dx / dd;
+        float rb = dy / dd;
+        float rc = (y1 * dx - x1 * dy) / dd;
+
+        float sa = vx / dd;
+        float sb = vy / dd;
+        float sc = (y1 * vx - x1 * vy) / dd;
+
+        asm_raySegmentDistance(res, x, y, len, ra, sa, rb, sb, rc, sc);
+    } else {
+        // should get optimized?
+        for (int i = 0; i < len; i++) {
+            res[i] = std::bit_cast<float>(0x50000000);
+        }
+    }
+}
+
 /**
  * @brief Performs res += normalDistributionPDF(x).
  *
  * @param x the list of values to be run through the normal distribution.
  * @param res the list which the pdf values get added to.
- * @param n length of the list. Must be multiple of 24 or have extra unused space.
+ * @param n length of the list. Must be multiple of 24 or have extra unused
+ * space.
  */
 template<double std_dev = 1.0, double multiplier = 1.0>
-inline void VNormalDistributionPDF(float* x, float* res, uint32_t n, float mean = 0) {
+inline void
+VNormalDistributionPDF(float* x, float* res, uint32_t n, float mean = 0) {
     constexpr double sqrt2pi = 2.50662827463; // sqrt(2pi)
     constexpr float C0 = (1.0 * sqrt2pi * std_dev) / multiplier;
     constexpr float C2 = 0.4258 * sqrt2pi / (std_dev * multiplier);
@@ -168,17 +255,16 @@ inline void VNormalDistributionPDF(float* x, float* res, uint32_t n, float mean 
     // clang-format on
 }
 
-
-
 /**
  * @brief Performs res += exponentialDistributionPDF(x).
  *
  * @param x the list of values to be run through the normal distribution.
  * @param res the list which the pdf values get added to.
- * @param n length of the list. Must be multiple of 24 or have extra unused space.
+ * @param n length of the list. Must be multiple of 24 or have extra unused
+ * space.
  */
 template<double exp_l = 1.0, double multipler = 1.0>
-inline void VNormalDistributionPDF(float* x, float* res, uint32_t n) {
+inline void VNexpDistributionPDF(float* x, float* res, uint32_t n) {
     constexpr float C0 = 0.877896649672 / exp_l;
     constexpr float C1 = 0.68318558894 / exp_l;
     constexpr float C2 = 0.396549717716 * exp_l;
