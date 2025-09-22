@@ -142,7 +142,6 @@ class ParticleFilter {
     }
 
     void checkOutOfFieldParticles() {
-        // TODO: check/fix performance
         for (size_t i = 0; i < N; i++) {
             // places the particle randomly on the field if its out of the field
             if (outOfField(i)) {
@@ -478,8 +477,8 @@ class ParticleFilter {
         std::normal_distribution<float> y_dist(pose.y.internal(),
                                         std_deviation.internal());
         for (size_t i = 0; i < N; i++) {
-            x[i] = x_dist(rng) * m;
-            y[i] = y_dist(rng) * m;
+            x[i] = x_dist(rng) * Fm;
+            y[i] = y_dist(rng) * Fm;
         }
         for (size_t i = 0; i < N; i++) {
             weights[i] = average_weight;
@@ -500,8 +499,8 @@ class ParticleFilter {
                                               max_y.internal());
 
         for (size_t i = 0; i < N; i++) {
-            x[i] = x_dist(rng) * m;
-            y[i] = y_dist(rng) * m;
+            x[i] = x_dist(rng) * Fm;
+            y[i] = y_dist(rng) * Fm;
         }
         for (size_t i = 0; i < N; i++) {
             weights[i] = average_weight;

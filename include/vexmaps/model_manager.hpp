@@ -1,5 +1,6 @@
 #include "vexmaps/localization_model.hpp"
 #include <algorithm>
+#include <cassert>
 #include <mutex>
 #include <vector>
 
@@ -67,9 +68,10 @@ class ModelManager : public LocalizationModel {
         models.erase(duplicate_models, models.end());
     }
 
-    // initializes each model
+    // initialize all models
     void init() override {
-        for (auto model : models) {
+        for (ManagedModel model : models) {
+			if(model.model == nullptr) continue;
             model.model->init();
             pros::delay(init_timeout);
         }
@@ -85,21 +87,23 @@ class ModelManager : public LocalizationModel {
      * lets models start up before other models start themselves
      */
     void createTasks() {
-        for (auto model : models) {
-            pros::Task model_task {
-                [=] {
-                    while (true) {
-                        uint32_t current_time = pros::millis();
-                        // the models should be global, so they should outlive the program? 
-                        model.model->update();
+        for (ManagedModel model : models) {
+            pros::Task model_task(
+              [model] {
+                  // the models should be global, so they should outlive the
+                  // program?
+                  while (model.model != nullptr) {
+                      uint32_t current_time = pros::millis();
+                      model.model->update();
 
-                        pros::c::task_delay_until(
-                          &current_time,
-                          to_msec(model.model->getTaskDeltaTime()));
-                    }
-                },
-                model.name.c_str()
-            };
+                      pros::c::task_delay_until(
+                        &current_time,
+                        to_msec(model.model->getTaskDeltaTime()));
+                  }
+                  std::cout << "stopped task for model " << model.name
+                            << std::endl;
+              },
+              model.name.c_str());
             pros::delay(task_creation_timeout);
         }
     }
@@ -114,51 +118,60 @@ class ModelManager : public LocalizationModel {
         if (new_active_model == nullptr) return;
 
         // only change active model if its one we are keeping track of
-        for (auto model : models) {
+        for (ManagedModel model : models) {
             if (model.model == new_active_model) {
                 active_model = new_active_model;
             }
         }
     }
 
-    void update() override {}
+    void update() override {
+        assert(false && "Update should never get called for model manager!");
+    }
 
     void setPose(units::Pose new_pose) override {
+        assert(active_model != nullptr);
         active_model->setPose(new_pose);
     }
 
     units::Pose getPose() override {
+        assert(active_model != nullptr);
         return active_model->getPose();
     }
 
     units::Pose getLastPose() override {
+        assert(active_model != nullptr);
         return active_model->getLastPose();
     }
 
     units::Pose getGlobalPoseDelta() override {
+        assert(active_model != nullptr);
         return active_model->getGlobalPoseDelta();
     }
 
     units::Pose getLocalPoseDelta() override {
+        assert(active_model != nullptr);
         return active_model->getLocalPoseDelta();
     }
 
     std::optional<float> getConfidence() override {
+        assert(active_model != nullptr);
         return active_model->getConfidence();
     }
 
     Length getDistanceTraveled() override {
+        assert(active_model != nullptr);
         return active_model->getDistanceTraveled();
     }
 
     Time getTaskDeltaTime() override {
+        assert(active_model != nullptr);
         return active_model->getTaskDeltaTime();
     }
 
     Time getLatestUpdateTimestamp() override {
+        assert(active_model != nullptr);
         return active_model->getLatestUpdateTimestamp();
     }
-
-    ~ModelManager() override = default;
 };
 } // namespace vexmaps

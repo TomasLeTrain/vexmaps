@@ -26,7 +26,7 @@ void testVNormalDistributionPDF() {
     x[7] = -20;
     x[8] = 2;
 
-    vexmaps::VNormalDistributionPDF(x, res, n);
+    vexmaps::VNormalDistributionPDF(x, res, n, 0);
 
     std::cout << "normal distribution test:" << std::endl;
     for(int i = 0; i < 30;i++){

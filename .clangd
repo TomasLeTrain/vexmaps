@@ -1,13 +1,14 @@
 CompileFlags:
   Add: [
     -std=c++23,
-    -isystem/usr/lib/clang/19/include,
-    "-isystem/usr/lib/gcc/arm-none-eabi/14.2.1/../../../../arm-none-eabi/include/c++/14.2.1",
-    "-isystem/usr/lib/gcc/arm-none-eabi/14.2.1/../../../../arm-none-eabi/include/c++/14.2.1/arm-none-eabi/thumb/v7-a+simd/hard",
-    "-isystem/usr/lib/gcc/arm-none-eabi/14.2.1/../../../../arm-none-eabi/include/c++/14.2.1/backward",
-    "-isystem/usr/lib/gcc/arm-none-eabi/14.2.1/include",
-    "-isystem/usr/lib/gcc/arm-none-eabi/14.2.1/include-fixed",
-    "-isystem/usr/lib/gcc/arm-none-eabi/14.2.1/../../../../arm-none-eabi/include",
+    "-isystem/nix/store/fbfcll570w9vimfbh41f9b4rrwnp33f3-clang-wrapper-19.1.7/resource-root/include",
 
-    ]
+    "-isystem/nix/store/ih9psjpxn2pbbzw4klr9s6hmmngc52n8-gcc-arm-embedded-14.3.rel1/bin/../lib/gcc/arm-none-eabi/14.3.1/../../../../arm-none-eabi/include/c++/14.3.1",
+    "-isystem/nix/store/ih9psjpxn2pbbzw4klr9s6hmmngc52n8-gcc-arm-embedded-14.3.rel1/bin/../lib/gcc/arm-none-eabi/14.3.1/../../../../arm-none-eabi/include/c++/14.3.1/arm-none-eabi/thumb/v7-a+simd/hard",
+    "-isystem/nix/store/ih9psjpxn2pbbzw4klr9s6hmmngc52n8-gcc-arm-embedded-14.3.rel1/bin/../lib/gcc/arm-none-eabi/14.3.1/../../../../arm-none-eabi/include/c++/14.3.1/backward",
+    "-isystem/nix/store/ih9psjpxn2pbbzw4klr9s6hmmngc52n8-gcc-arm-embedded-14.3.rel1/bin/../lib/gcc/arm-none-eabi/14.3.1/include",
+    "-isystem/nix/store/ih9psjpxn2pbbzw4klr9s6hmmngc52n8-gcc-arm-embedded-14.3.rel1/bin/../lib/gcc/arm-none-eabi/14.3.1/include-fixed",
+    "-isystem/nix/store/ih9psjpxn2pbbzw4klr9s6hmmngc52n8-gcc-arm-embedded-14.3.rel1/bin/../lib/gcc/arm-none-eabi/14.3.1/../../../../arm-none-eabi/include"
+  ]
   Remove: [ -isystem*, --std=gnu++23, -mfp16-format=ieee ]
+  Compiler: /nix/store/mdh9zj32f7s2xhg683g8x5sg9qba4rxb-clang-19.1.7/bin/clang

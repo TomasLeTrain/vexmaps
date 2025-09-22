@@ -81,7 +81,7 @@ class DistanceSensorModel : public Sensor {
         const int32_t measured_mm = distance_sensor->get();
 
         measured_distance = from_mm(measured_mm);
-		f_measured_distance = measured_distance;
+		f_measured_distance = measured_distance.internal();
 
         // distance sensor doesn't measure anything
         exit = measured_mm == 9999 || (!enabled);

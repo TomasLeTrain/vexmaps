@@ -18,6 +18,7 @@ class LocalizationModel {
      * @brief Updates pose estimate. Should be called frequently
      */
     virtual void update() = 0;
+
     virtual void setPose(units::Pose new_pose) = 0;
 
     virtual units::Pose getPose() = 0;
@@ -58,29 +59,31 @@ class LocalizationModel {
 };
 
 // makes a task to automatically run a localizationModel
-inline pros::Task createLocalizationTask(LocalizationModel* model){
-    pros::Task task{[&model] {
-        while(true){
+inline pros::Task createLocalizationTask(LocalizationModel* model) {
+    pros::Task task { [model] {
+        while (model != nullptr) {
             uint32_t current_time = pros::millis();
             model->update();
-            pros::c::task_delay_until(&current_time, to_msec(model->getTaskDeltaTime()));
+            pros::c::task_delay_until(&current_time,
+                                      to_msec(model->getTaskDeltaTime()));
         }
-    }};
+    } };
     return task;
 }
 
-inline units::Pose globalToLocalDelta(units::Pose global_delta, Angle pose_angle){
-        return units::Pose(
-                global_delta.x * units::cos(-pose_angle) - global_delta.y * units::sin(-pose_angle),
-                global_delta.x * units::sin(-pose_angle) + global_delta.y * units::cos(-pose_angle),
-                global_delta.orientation);
+inline units::Pose localToGlobalDelta(units::Pose local_delta,
+                                      Angle pose_angle) {
+    // clang-format off
+	return units::Pose(
+			local_delta.x * units::cos(pose_angle) - local_delta.y * units::sin(pose_angle),
+			local_delta.x * units::sin(pose_angle) + local_delta.y * units::cos(pose_angle),
+			local_delta.orientation);
+    // clang-format on
 }
 
-inline units::Pose localToGlobalDelta(units::Pose local_delta, Angle pose_angle){
-        return units::Pose(
-                local_delta.x * units::cos(pose_angle) - local_delta.y * units::sin(pose_angle),
-                local_delta.x * units::sin(pose_angle) + local_delta.y * units::cos(pose_angle),
-                local_delta.orientation);
+inline units::Pose globalToLocalDelta(units::Pose global_delta,
+                                      Angle pose_angle) {
+    return localToGlobalDelta(global_delta, -pose_angle);
 }
 
 }; // namespace vexmaps

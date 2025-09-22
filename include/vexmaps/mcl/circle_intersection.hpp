@@ -3,6 +3,7 @@
 #include "arm_neon.h"
 #include <bit>
 #include <cstdint>
+#include <cstring>
 
 namespace vexmaps {
 /**
@@ -36,18 +37,20 @@ extern "C" void circleIntersection(float* res,
                                    float r);
 
 /**
- * @brief Calculates projection of the vector from (x,y) to (ox,oy) onto the vector (vx,vy).
- * If it doesn't exist returns a big value.
+ * @brief Calculates projection of the vector from (x,y) to (ox,oy) onto the
+ * vector (vx,vy). If it doesn't exist returns a big value.
  *
- * @param res [TODO:parameter]
- * @param x [TODO:parameter]
- * @param y [TODO:parameter]
- * @param len [TODO:parameter]
- * @param vx [TODO:parameter]
- * @param vy [TODO:parameter]
- * @param ox [TODO:parameter]
- * @param oy [TODO:parameter]
- * @param r [TODO:parameter]
+ * @param res where the results gets stored
+ * @param x list of x components to test
+ * @param y list of y components to test
+ * @param len length of the list
+ * @param vx x component of the unit vector of the ray. For a ray with angle
+ * theta, this should be cos(theta).
+ * @param vy y component of the unit vector of the ray. For a ray with angle
+ * theta, this should be sin(theta).
+ * @param ox x component of the center of the circle.
+ * @param oy y component of the center of the circle.
+ * @param r radius of the circle
  */
 extern "C" void circleCenterIntersection(float* res,
                                          float* x,
@@ -139,16 +142,21 @@ inline void raySegmentDistance(float* res,
 
         asm_raySegmentDistance(res, x, y, len, ra, sa, rb, sb, rc, sc);
     } else {
-		// sets all res to 1.3979697 * 10^10
-		memset(res, 0x50, len * sizeof(float));
+        // sets all res to 1.3979697 * 10^10
+        memset(res, 0x50, len * sizeof(float));
     }
 }
 
 // routine that can get reused by exponential / normal distribution.
 // len should either be divisible by two or be large enough to fit extra numbers
-inline void
-asm_pdfApproximation(float * x, float* res, uint32_t n, float32x4_t VC0, float32x4_t VC1, float32x4_t VC2, float32x4_t VC3) {
-	// main logic loop
+inline void asm_pdfApproximation(float* x,
+                                 float* res,
+                                 uint32_t n,
+                                 float32x4_t VC0,
+                                 float32x4_t VC1,
+                                 float32x4_t VC2,
+                                 float32x4_t VC3) {
+    // main logic loop
     for (int i = 0; i < n; i += 24) {
         // clang-format off
         asm volatile(
@@ -243,20 +251,22 @@ asm_pdfApproximation(float * x, float* res, uint32_t n, float32x4_t VC0, float32
  * @param n length of the list. Must be multiple of 24 or have extra unused
  * space.
  */
-template<double std_dev = 1.0, double multiplier = 1.0>
-inline void
-VNormalDistributionPDF(float* x, float* res, uint32_t n, float mean) {
-    constexpr double sqrt2pi = 2.50662827463; // sqrt(2pi)
-    constexpr float C0 = (1.0 * sqrt2pi * std_dev) / multiplier;
-    constexpr float C2 = 0.4258 * sqrt2pi / (std_dev * multiplier);
-    constexpr float C4 =
-      (0.258 * sqrt2pi) / (std_dev * std_dev * std_dev * multiplier);
+inline void VNormalDistributionPDF(float* x,
+                                   float* res,
+                                   uint32_t n,
+                                   double mean = 0.0,
+                                   double std_dev = 1.0,
+                                   double multiplier = 1.0) {
+    double sqrt2pi = 2.50662827463; // sqrt(2pi)
+    float C0 = (1.0 * sqrt2pi * std_dev) / multiplier;
+    float C2 = 0.4258 * sqrt2pi / (std_dev * multiplier);
+    float C4 = (0.258 * sqrt2pi) / (std_dev * std_dev * std_dev * multiplier);
 
     // uses up 4 registers, leaving 12 to be used for processing
     float32x4_t VC0 = vdupq_n_f32(C0), VC2 = vdupq_n_f32(C2),
                 VC4 = vdupq_n_f32(C4), VMEAN = vdupq_n_f32(mean);
 
-	asm_pdfApproximation(x, res, n, VMEAN, VC0, VC2, VC4);
+    asm_pdfApproximation(x, res, n, VMEAN, VC0, VC2, VC4);
 
     // clang-format on
 }
@@ -269,18 +279,21 @@ VNormalDistributionPDF(float* x, float* res, uint32_t n, float mean) {
  * @param n length of the list. Must be multiple of 24 or have extra unused
  * space.
  */
-template<double exp_l = 1.0, double multipler = 1.0>
-inline void VNexpDistributionPDF(float* x, float* res, uint32_t n) {
-    constexpr float C0 = 0.877896649672 / exp_l;
-    constexpr float C1 = 0.68318558894 / exp_l;
-    constexpr float C2 = 0.396549717716 * exp_l;
-    constexpr float C3 = 0.0532744591926 * exp_l * exp_l * exp_l;
+inline void VNexpDistributionPDF(float* x,
+                                 float* res,
+                                 uint32_t n,
+                                 double exp_l = 1.0,
+                                 double multiplier = 1.0) {
+    float C0 = 0.877896649672 / exp_l;
+    float C1 = 0.68318558894 / exp_l;
+    float C2 = 0.396549717716 * exp_l;
+    float C3 = 0.0532744591926 * exp_l * exp_l * exp_l;
 
     // uses up 4 registers, leaving 12 to be used for processing
     float32x4_t VC0 = vdupq_n_f32(C0), VC1 = vdupq_n_f32(C1),
                 VC2 = vdupq_n_f32(C2), VC3 = vdupq_n_f32(C3);
 
-	asm_pdfApproximation(x, res, n, VC0, VC1, VC2, VC3);
+    asm_pdfApproximation(x, res, n, VC0, VC1, VC2, VC3);
 }
 
 } // namespace vexmaps

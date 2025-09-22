@@ -145,6 +145,7 @@ void autonomous() {}
 void opcontrol() {
     // set the pose
     model_manager.setPose({ 48_in, -48_in, 0_stDeg });
+
     // printf("doing more stuff\n");
     bool manual_logging = true;
 

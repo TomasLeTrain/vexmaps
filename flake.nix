@@ -18,16 +18,41 @@
         packages = with pkgs; [
           pros-cli-nix.packages.${system}.default
           gcc-arm-embedded
-          clang
+	      clang
         ];
         shellHook = ''
           clear
-               echo -n Bobot go brrrr
-               export MAKEFLAGS="-j $((`nproc` - 1))"
-               alias mut="pros --no-sentry --no-analytics mut --after run"
-               alias mu="pros --no-sentry --no-analytics mu"
-               alias m="pros --no-sentry --no-analytics build-compile-commands"
-               alias t="pros --no-sentry --no-analytics t"
+		  echo -n Bobot go brrrr
+
+		  export MAKEFLAGS="-j $((`nproc` - 1))"
+
+		  touch ./.clangd
+		  CLANGD=$(
+		  cat << 'EOF'
+CompileFlags:
+  Add: [
+    -std=c++23,
+    "-isystem${pkgs.clang}/resource-root/include",
+
+    "-isystem${pkgs.gcc-arm-embedded}/bin/../lib/gcc/arm-none-eabi/14.3.1/../../../../arm-none-eabi/include/c++/14.3.1",
+    "-isystem${pkgs.gcc-arm-embedded}/bin/../lib/gcc/arm-none-eabi/14.3.1/../../../../arm-none-eabi/include/c++/14.3.1/arm-none-eabi/thumb/v7-a+simd/hard",
+    "-isystem${pkgs.gcc-arm-embedded}/bin/../lib/gcc/arm-none-eabi/14.3.1/../../../../arm-none-eabi/include/c++/14.3.1/backward",
+    "-isystem${pkgs.gcc-arm-embedded}/bin/../lib/gcc/arm-none-eabi/14.3.1/include",
+    "-isystem${pkgs.gcc-arm-embedded}/bin/../lib/gcc/arm-none-eabi/14.3.1/include-fixed",
+    "-isystem${pkgs.gcc-arm-embedded}/bin/../lib/gcc/arm-none-eabi/14.3.1/../../../../arm-none-eabi/include"
+  ]
+  Remove: [ -isystem*, --std=gnu++23, -mfp16-format=ieee ]
+  Compiler: ${pkgs.clang.cc}/bin/clang
+EOF
+		  )
+		  echo "$CLANGD" > ./.clangd
+
+		  alias mut="pros --no-sentry --no-analytics mut --after run"
+		  alias mu="pros --no-sentry --no-analytics mu"
+
+		  alias u="pros --no-sentry --no-analytics u"
+		  alias m="pros --no-sentry --no-analytics build-compile-commands"
+		  alias t="pros --no-sentry --no-analytics t"
         '';
       };
     });
