@@ -1,13 +1,15 @@
 #include "tests/circle_intersection_test.hpp"
 #include "pros/rtos.h"
-#include "vexmaps/mcl/circle_intersection.hpp"
+#include "vexmaps/mcl/asm_functions.hpp"
 #include <cmath>
 #include <iostream>
 #include <vector>
 
 void testCircleIntersections() {
-    // int n = (40000 / 16) * 16;
-    int n = (100 / 16) * 16;
+	const int target_n = 100;
+
+	// make n divisible by 16
+    int n = (target_n / 16) * 16;
 
     std::vector<float> x(n);
     std::vector<float> y(n);
@@ -60,8 +62,8 @@ void testCircleIntersections() {
     // running in the simulator gives 25.813 ms to run 40,000 points, meaning 1549.606 particles / ms
     std::cout << "time taken: " << end_time - start_time  << std::endl;
 
-    for(auto e : res){
-        std::cout << e << "\n";
-    }
-    std::cout << std::endl;
+    // for(auto e : res){
+    //     std::cout << e << "\n";
+    // }
+    // std::cout << std::endl;
 }

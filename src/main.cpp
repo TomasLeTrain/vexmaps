@@ -127,7 +127,7 @@ void initialize() {
     pros::c::serctl(SERCTL_DISABLE_COBS,NULL);
 
     testCircleIntersections();
-    testVNormalDistributionPDF();
+    testDistributions();
 
     // reset the imu
     imu.reset(true);

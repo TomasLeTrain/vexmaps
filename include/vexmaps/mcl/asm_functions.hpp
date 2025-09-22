@@ -81,6 +81,14 @@ extern "C" void asm_raySegmentDistance(float* res,
                                        float rc,
                                        float sc);
 
+extern "C" void asm_pdfApproximation(float* res,
+                                     float* x,
+                                     uint32_t n,
+                                     float VC0,
+                                     float VC1,
+                                     float VC2,
+                                     float VC3);
+
 /**
  * @brief Calculates distance of a ray with origin at (x,y) with angle
  * represented by a unit vector (vx,vy) which intersects a line segment with
@@ -148,108 +156,6 @@ inline void raySegmentDistance(float* res,
     }
 }
 
-// routine that can get reused by exponential / normal distribution.
-// len should either be divisible by two or be large enough to fit extra numbers
-inline void asm_pdfApproximation(float* x,
-                                 float* res,
-                                 uint32_t n,
-                                 float32x4_t VC0,
-                                 float32x4_t VC1,
-                                 float32x4_t VC2,
-                                 float32x4_t VC3) {
-    // main logic loop
-    for (int i = 0; i < n; i += 24) {
-		// std::cout << "bruh " << i <<  " " << *x << " " << *res << std::endl;
-        // clang-format off
-        asm volatile(
-                "vldmia %m[x], {q0-q5}\n\t"
-                // q0-q7 are now loaded
-                
-                // x2 = x + c0
-                "vadd.f32 q0, q0, %q[C0]\n\t"
-                "vadd.f32 q1, q1, %q[C0]\n\t"
-                "vadd.f32 q2, q2, %q[C0]\n\t"
-                "vadd.f32 q3, q3, %q[C0]\n\t"
-                "vadd.f32 q4, q4, %q[C0]\n\t"
-                "vadd.f32 q5, q5, %q[C0]\n\t"
-
-                // x^2 = (x+c0)^2
-                "vmul.f32 q0, q0, q0\n\t"
-                "vmul.f32 q1, q1, q1\n\t"
-                "vmul.f32 q2, q2, q2\n\t"
-                "vmul.f32 q3, q3, q3\n\t"
-                "vmul.f32 q4, q4, q4\n\t"
-                "vmul.f32 q5, q5, q5\n\t"
-
-                // t1 = x^2 * c3
-                "vmul.f32 q6,  q0, %q[C3]\n\t"
-                "vmul.f32 q7,  q1, %q[C3]\n\t"
-                "vmul.f32 q8,  q2, %q[C3]\n\t"
-                "vmul.f32 q9,  q3, %q[C3]\n\t"
-                "vmul.f32 q10, q4, %q[C3]\n\t"
-                "vmul.f32 q11, q5, %q[C3]\n\t"
-
-                // t1 = c2 + t1
-                "vadd.f32 q6,  %q[C2], q6  \n\t"
-                "vadd.f32 q7,  %q[C2], q7  \n\t"
-                "vadd.f32 q8,  %q[C2], q8  \n\t"
-                "vadd.f32 q9,  %q[C2], q9  \n\t"
-                "vadd.f32 q10, %q[C2], q10 \n\t"
-                "vadd.f32 q11, %q[C2], q11 \n\t"
-
-                // t2 = x^2 * t1
-                "vmul.f32 q6,  q0, q6  \n\t"
-                "vmul.f32 q7,  q1, q7  \n\t"
-                "vmul.f32 q8,  q2, q8  \n\t"
-                "vmul.f32 q9,  q3, q9  \n\t"
-                "vmul.f32 q10, q4, q10 \n\t"
-                "vmul.f32 q11, q5, q11 \n\t"
-
-                // t2 = c1 + t2
-                "vadd.f32 q0, %q[C1], q6  \n\t"
-                "vadd.f32 q1, %q[C1], q7  \n\t"
-                "vadd.f32 q2, %q[C1], q8  \n\t"
-                "vadd.f32 q3, %q[C1], q9  \n\t"
-                "vadd.f32 q4, %q[C1], q10 \n\t"
-                "vadd.f32 q5, %q[C1], q11 \n\t"
-
-                // here the q6-q11 register get freed, so we can use them to store res
-                "vldmia %m[res], {q6-q11}\n\t"
-
-                // pdf(x) = 1 / t2
-                "vrecpe.f32 q0, q0 \n\t"
-                "vrecpe.f32 q1, q1 \n\t"
-                "vrecpe.f32 q2, q2 \n\t"
-                "vrecpe.f32 q3, q3 \n\t"
-                "vrecpe.f32 q4, q4 \n\t"
-                "vrecpe.f32 q5, q5 \n\t"
-                
-                // res += pdf(x)
-                // "vadd.f32 q0, q0, q6  \n\t"
-                // "vadd.f32 q1, q1, q7  \n\t"
-                // "vadd.f32 q2, q2, q8  \n\t"
-                // "vadd.f32 q3, q3, q9  \n\t"
-                // "vadd.f32 q4, q4, q10 \n\t"
-                // "vadd.f32 q5, q5, q11 \n\t"
-
-                // store to res
-                "vstmia %m[res], {q0-q5}\n\t"
-				:
-                : [x] "Um"(x), [res] "Um"(res), [C0] "w"(VC0), [C1] "w"(VC1), [C2] "w"(VC2), [C3] "w"(VC3)
-                // uses 12 registers
-                : "d0","d1",   "d2","d3",   "d4","d5",   "d6","d7",   "d9","d9",
-                  "d10","d11", "d12","d13", "d14","d15", "d16","d17", "d18","d19",
-                  "d20","d21", "d22","d23"
-                );
-
-		x += 24;
-		res += 24;
-
-		// std::cout << "bruh2 " << i <<  " " << *x << " " << *res << std::endl;
-    }
-    // clang-format on
-}
-
 /**
  * @brief Performs res += normalDistributionPDF(x).
  *
@@ -258,22 +164,18 @@ inline void asm_pdfApproximation(float* x,
  * @param n length of the list. Must be multiple of 24 or have extra unused
  * space.
  */
-inline void VNormalDistributionPDF(float* x,
-                                   float* res,
+inline void VNormalDistributionPDF(float* res,
+                                   float* x,
                                    uint32_t n,
                                    double mean = 0.0,
                                    double std_dev = 1.0,
                                    double multiplier = 1.0) {
-    double sqrt2pi = 2.50662827463; // sqrt(2pi)
-    float C0 = (1.0 * sqrt2pi * std_dev) / multiplier;
-    float C2 = 0.4258 * sqrt2pi / (std_dev * multiplier);
-    float C4 = (0.258 * sqrt2pi) / (std_dev * std_dev * std_dev * multiplier);
+    constexpr double sqrt2pi = 2.50662827463; // sqrt(2pi)
+    const float C0 = (1.0 * sqrt2pi * std_dev) / multiplier;
+    const float C2 = 0.4258 * sqrt2pi / (std_dev * multiplier);
+    const float C4 = (0.258 * sqrt2pi) / (std_dev * std_dev * std_dev * multiplier);
 
-    // uses up 4 registers, leaving 12 to be used for processing
-    float32x4_t VC0 = vdupq_n_f32(C0), VC2 = vdupq_n_f32(C2),
-                VC4 = vdupq_n_f32(C4), VMEAN = vdupq_n_f32(-mean);
-
-    asm_pdfApproximation(x, res, n, VMEAN, VC0, VC2, VC4);
+    asm_pdfApproximation(res, x, n, -mean, C0, C2, C4);
 
     // clang-format on
 }
@@ -286,21 +188,17 @@ inline void VNormalDistributionPDF(float* x,
  * @param n length of the list. Must be multiple of 24 or have extra unused
  * space.
  */
-inline void VNexpDistributionPDF(float* x,
-                                 float* res,
+inline void VNexpDistributionPDF(float* res,
+                                 float* x,
                                  uint32_t n,
                                  double exp_l = 1.0,
                                  double multiplier = 1.0) {
-    float C0 = 0.877896649672 / exp_l;
-    float C1 = 0.68318558894 / exp_l;
-    float C2 = 0.396549717716 * exp_l;
-    float C3 = 0.0532744591926 * exp_l * exp_l * exp_l;
+    const float C0 = 0.877896649672 / exp_l;
+    const float C1 = 0.68318558894 / exp_l;
+    const float C2 = 0.396549717716 * exp_l;
+    const float C3 = 0.0532744591926 * exp_l * exp_l * exp_l;
 
-    // uses up 4 registers, leaving 12 to be used for processing
-    float32x4_t VC0 = vdupq_n_f32(C0), VC1 = vdupq_n_f32(C1),
-                VC2 = vdupq_n_f32(C2), VC3 = vdupq_n_f32(C3);
-
-    asm_pdfApproximation(x, res, n, VC0, VC1, VC2, VC3);
+    asm_pdfApproximation(res, x, n, C0, C1, C2, C3);
 }
 
 } // namespace vexmaps

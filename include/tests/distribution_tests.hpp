@@ -1,1 +1,1 @@
-void testVNormalDistributionPDF();
+void testDistributions();
