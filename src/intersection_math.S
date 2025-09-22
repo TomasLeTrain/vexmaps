@@ -1,5 +1,5 @@
 .text
-.syntax unified
+; .syntax unified
 
 # most of the circle math involved
 # after the registers have the following layout:
@@ -290,14 +290,13 @@ vpush {q4-q7}
 # q0 - factors
 # q1 - rc
 # q15 - sc
-# q14 - infinity
+# q14 - 1 / infinity
 
 # this leaves 12 registers free
 
 vdup.f32 q15, d2[1] // moves sc, done first so next instruction doesn't override current
 vdup.f32 q1, d2[0]  // moves rc
 
-# loads roughly 8.589935 * 10^9
 vmov.i32 q14, 0x50000000
 
 # main loop logic
@@ -344,6 +343,10 @@ vmov.i32 q14, 0x50000000
     vsub.f32 q4, q8, q4 // y * sa - x * sb
     vsub.f32 q5, q9, q5 // y * sa - x * sb
 
+	// moves 1.0 into q14
+	// done far back enough to where latency isn't an issue
+	vmov.f32 q14, 1.0
+
     vsub.f32 q2, q2, q15 // s = y * sa - x * sb - sc
     vsub.f32 q3, q3, q15 // s = y * sa - x * sb - sc
     vsub.f32 q4, q4, q15 // s = y * sa - x * sb - sc
@@ -356,16 +359,20 @@ vmov.i32 q14, 0x50000000
     vcge.f32 q9, q5, #0  // s >= 0
 
     // since we don't have enough registers left, we override s since this is the last check used by s
-    vcle.f32 q2, q2, #1  // s =< 1
-    vcle.f32 q3, q3, #1  // s =< 1
-    vcle.f32 q4, q4, #1  // s =< 1
-    vcle.f32 q5, q5, #1  // s =< 1
+	
+    vcle.f32 q2, q2, q14   // s <= 1
+    vcle.f32 q3, q3, q14   // s <= 1
+    vcle.f32 q4, q4, q14   // s <= 1
+    vcle.f32 q5, q5, q14   // s <= 1
 
     // && both into one register
     vand.f32 q2, q2, q6
     vand.f32 q3, q3, q7
     vand.f32 q4, q4, q8
     vand.f32 q5, q5, q9
+
+	// loads inifinity into q14 (roughly 8.589935 * 10^9)
+	vmov.i32 q14, 0x50000000
 
     vcge.f32 q6, q10, #0  // r >= 0
     vcge.f32 q7, q11, #0  // r >= 0
@@ -389,7 +396,7 @@ vmov.i32 q14, 0x50000000
 
 # res is now computed, just need to store the result
     vstm r0!, {q2-q5}
-anything
+
 # other part of loop
     bgt .RaySegmentLoop
 

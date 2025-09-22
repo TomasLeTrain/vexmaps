@@ -20,6 +20,7 @@ class ParticleFilter {
     // used for vectorization
     static constexpr size_t remaining_particles = (N - (N % 4));
 
+	// aligned to 16 bytes (4 floats)
     alignas(16) FLength x[N];
     alignas(16) FLength y[N];
     alignas(16) float weights[N];

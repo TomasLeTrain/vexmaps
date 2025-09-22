@@ -51,6 +51,8 @@ class DistanceSensorModel : public Sensor {
 
     float fsina, fcosa;
 
+    float f_measured_distance = 0;
+
     float x_coeff;
     float y_coeff;
     FLength hor_wall_coeff;
@@ -78,7 +80,8 @@ class DistanceSensorModel : public Sensor {
 
         const int32_t measured_mm = distance_sensor->get();
 
-        this->measured_distance = from_mm(measured_mm);
+        measured_distance = from_mm(measured_mm);
+		f_measured_distance = measured_distance;
 
         // distance sensor doesn't measure anything
         exit = measured_mm == 9999 || (!enabled);
@@ -248,30 +251,41 @@ class DistanceSensorModel : public Sensor {
         // build result on the curr_weights list
         // first do the distance calculations
         VdistanceList(tmp_weights, x, y);
+
         // here tmp_weights = distance to wall
         VNormalDistributionPDF<DistanceSensorConfig::std_deviation,
                                DistanceSensorConfig::normalCoeff>(tmp_weights,
                                                                   curr_weights,
-                                                                  len);
+                                                                  len,
+																  f_measured_distance);
         // also apply the dist / random factors based on this distance
+
+		float matchloader1x = 0;
+		float matchloader1y = 0;
+
+		float matchloader2x = 0;
+		float matchloader2y = 0;
+
+		float matchloader_radius = 0;
 
         // now calculate intersections with matchloaders - overrides whatever
         // was in tmp_weights
-        circleIntersection(tmp_weights,
+		circleIntersection(tmp_weights,
                            x,
                            y,
                            len,
                            this->fcosa,
                            this->fsina,
-                           0,
-                           0,
-                           2);
+                           matchloader1x,
+                           matchloader1y,
+                           matchloader_radius);
 
         // apply the normal distribution for this matchloader
         VNormalDistributionPDF<DistanceSensorConfig::std_deviation,
                                DistanceSensorConfig::normalCoeff>(tmp_weights,
                                                                   curr_weights,
-                                                                  len);
+                                                                  len,
+																  f_measured_distance);
         // now do the same for the other matchloader
         circleIntersection(tmp_weights,
                            x,
@@ -279,15 +293,16 @@ class DistanceSensorModel : public Sensor {
                            len,
                            this->fcosa,
                            this->fsina,
-                           0,
-                           0,
-                           2);
+                           matchloader2x,
+                           matchloader2y,
+                           matchloader_radius);
 
         // apply the normal distribution for this matchloader
         VNormalDistributionPDF<DistanceSensorConfig::std_deviation,
                                DistanceSensorConfig::normalCoeff>(tmp_weights,
                                                                   curr_weights,
-                                                                  len);
+                                                                  len,
+																  f_measured_distance);
 
         // check top center goal - modeled as a line segment
         raySegmentDistance(tmp_weights,
@@ -304,7 +319,8 @@ class DistanceSensorModel : public Sensor {
         VNormalDistributionPDF<DistanceSensorConfig::std_deviation,
                                DistanceSensorConfig::normalCoeff>(tmp_weights,
                                                                   curr_weights,
-                                                                  len);
+                                                                  len,
+																  f_measured_distance);
         // check bottom center goal - modeled as a line segment
         raySegmentDistance(tmp_weights,
                            x,
@@ -321,7 +337,8 @@ class DistanceSensorModel : public Sensor {
         VNormalDistributionPDF<DistanceSensorConfig::std_deviation,
                                DistanceSensorConfig::normalCoeff>(tmp_weights,
                                                                   curr_weights,
-                                                                  len);
+                                                                  len,
+																  f_measured_distance);
         // check -y top long goals - use two circles to model this
         // checks left
         circleIntersection(tmp_weights,
@@ -353,7 +370,8 @@ class DistanceSensorModel : public Sensor {
         VNormalDistributionPDF<DistanceSensorConfig::std_deviation,
                                DistanceSensorConfig::normalCoeff>(tmp_weights,
                                                                   curr_weights,
-                                                                  len);
+                                                                  len,
+																  f_measured_distance);
 
         // check y+ long goal - use two circles to model this
         // checks left
@@ -386,10 +404,9 @@ class DistanceSensorModel : public Sensor {
         VNormalDistributionPDF<DistanceSensorConfig::std_deviation,
                                DistanceSensorConfig::normalCoeff>(tmp_weights,
                                                                   curr_weights,
-                                                                  len);
+                                                                  len,
+																  f_measured_distance);
     }
-
-    ~DistanceSensorModel() override = default;
 
     std::optional<units::V2FPosition> getExpected() override {
         return std::nullopt;

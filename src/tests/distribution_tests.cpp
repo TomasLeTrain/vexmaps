@@ -7,9 +7,11 @@ void testVNormalDistributionPDF() {
     const int n = (1000 / 48) * 48;
     
     float x[n];
+	float res[n];
 
     for(int i = 0; i < n;i ++){
         x[i] = 0;
+		res[i] = 0;
     }
 
     x[0] = 0.1;
@@ -24,7 +26,7 @@ void testVNormalDistributionPDF() {
     x[7] = -20;
     x[8] = 2;
 
-    vexmaps::VNormalDistributionPDF(x, n);
+    vexmaps::VNormalDistributionPDF(x, res, n);
 
     std::cout << "normal distribution test:" << std::endl;
     for(int i = 0; i < 30;i++){
