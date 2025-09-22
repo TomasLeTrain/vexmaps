@@ -4,6 +4,7 @@
 #include <bit>
 #include <cstdint>
 #include <cstring>
+#include <iostream>
 
 namespace vexmaps {
 /**
@@ -158,9 +159,10 @@ inline void asm_pdfApproximation(float* x,
                                  float32x4_t VC3) {
     // main logic loop
     for (int i = 0; i < n; i += 24) {
+		// std::cout << "bruh " << i <<  " " << *x << " " << *res << std::endl;
         // clang-format off
         asm volatile(
-                "vldmia %m[x]!, {q0-q5}\n\t"
+                "vldmia %m[x], {q0-q5}\n\t"
                 // q0-q7 are now loaded
                 
                 // x2 = x + c0
@@ -223,22 +225,27 @@ inline void asm_pdfApproximation(float* x,
                 "vrecpe.f32 q5, q5 \n\t"
                 
                 // res += pdf(x)
-                "vadd.f32 q0, q0, q6  \n\t"
-                "vadd.f32 q1, q1, q7  \n\t"
-                "vadd.f32 q2, q2, q8  \n\t"
-                "vadd.f32 q3, q3, q9  \n\t"
-                "vadd.f32 q4, q4, q10 \n\t"
-                "vadd.f32 q5, q5, q11 \n\t"
+                // "vadd.f32 q0, q0, q6  \n\t"
+                // "vadd.f32 q1, q1, q7  \n\t"
+                // "vadd.f32 q2, q2, q8  \n\t"
+                // "vadd.f32 q3, q3, q9  \n\t"
+                // "vadd.f32 q4, q4, q10 \n\t"
+                // "vadd.f32 q5, q5, q11 \n\t"
 
                 // store to res
-                "vstmia %m[res]!, {q0-q5}\n\t"
-                :
+                "vstmia %m[res], {q0-q5}\n\t"
+				:
                 : [x] "Um"(x), [res] "Um"(res), [C0] "w"(VC0), [C1] "w"(VC1), [C2] "w"(VC2), [C3] "w"(VC3)
                 // uses 12 registers
-                : "d0","d1","d2","d3","d4","d5","d6","d7","d9","d9",
-                "d10","d11","d12","d13","d14","d15","d16","d17","d18","d19",
-                "d20","d21","d22","d23"
+                : "d0","d1",   "d2","d3",   "d4","d5",   "d6","d7",   "d9","d9",
+                  "d10","d11", "d12","d13", "d14","d15", "d16","d17", "d18","d19",
+                  "d20","d21", "d22","d23"
                 );
+
+		x += 24;
+		res += 24;
+
+		// std::cout << "bruh2 " << i <<  " " << *x << " " << *res << std::endl;
     }
     // clang-format on
 }
@@ -264,7 +271,7 @@ inline void VNormalDistributionPDF(float* x,
 
     // uses up 4 registers, leaving 12 to be used for processing
     float32x4_t VC0 = vdupq_n_f32(C0), VC2 = vdupq_n_f32(C2),
-                VC4 = vdupq_n_f32(C4), VMEAN = vdupq_n_f32(mean);
+                VC4 = vdupq_n_f32(C4), VMEAN = vdupq_n_f32(-mean);
 
     asm_pdfApproximation(x, res, n, VMEAN, VC0, VC2, VC4);
 
