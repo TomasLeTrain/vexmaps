@@ -30,38 +30,16 @@ class TrackingWheel {
     virtual ~TrackingWheel() = default;
 };
 
-inline double getGearingTicks(pros::MotorGears gearing) {
-    double gearing_multiplier = 1;
-    switch (gearing) {
-        case pros::MotorGears::blue: gearing_multiplier = 300.0; break;
-        case pros::MotorGears::green: gearing_multiplier = 900.0; break;
-        case pros::MotorGears::red: gearing_multiplier = 1800.0; break;
-        default: gearing_multiplier = 1; break;
-    }
-    return gearing_multiplier;
-}
-
-inline AngularVelocity getGearingRPM(pros::MotorGears gearing) {
-    AngularVelocity gearing_multiplier = 200_rpm;
-    switch (gearing) {
-        case pros::MotorGears::blue: gearing_multiplier = 600_rpm; break;
-        case pros::MotorGears::green: gearing_multiplier = 200_rpm; break;
-        case pros::MotorGears::red: gearing_multiplier = 100_rpm; break;
-        default: gearing_multiplier = 200_rpm; break;
-    }
-    return gearing_multiplier;
-}
-
 class MotorGroupTracking : public TrackingWheel {
   private:
-    Length last_distance;
-    Length delta_distance;
+    std::optional<Length> last_distance = std::nullopt;
+    Length delta_distance = 0_m;
+
+    pros::MotorGroup* motors;
 
     Length diameter;
     AngularVelocity rpm;
     Length offset;
-
-    pros::MotorGroup* motors;
 
   public:
     MotorGroupTracking(pros::MotorGroup* motors,
@@ -73,72 +51,34 @@ class MotorGroupTracking : public TrackingWheel {
           rpm(rpm),
           offset(offset) {}
 
-    Length calculateDistance() {
-        Length distance = 0_in;
-
-        if (motors == nullptr) {
-            printf("odometry: motor group is a nullptr!\n");
-            return 0_in;
-        }
-
-        int used_motor_count = 0;
-
-        for (int i = 0; i < motors->size(); i++) {
-            int port = abs(motors->get_port(i));
-            // check if is installed
-            auto plugged_device_type =
-              (pros::DeviceType)pros::c::registry_get_plugged_type(port - 1);
-
-            // only include if plugged in
-            if (plugged_device_type == pros::DeviceType::motor) {
-                pros::MotorGears gearing = motors->get_gearing(i);
-                pros::MotorUnits encoder = motors->get_encoder_units(i);
-
-                double rotation_multiplier =
-                  1; // should convert position to # of rotations
-
-                switch (encoder) {
-                    case pros::MotorUnits::degrees:
-                        rotation_multiplier = 1 / 360.0;
-                        break;
-                    case pros::MotorUnits::counts:
-                        rotation_multiplier = 1 / getGearingTicks(gearing);
-                        break;
-                    case pros::MotorUnits::rotations:
-                        rotation_multiplier = 1;
-                        break;
-                    default: rotation_multiplier = 1; break;
-                }
-
-                // number of rotations the wheel has traveled
-                double rotations =
-                  motors->get_position(i) * rotation_multiplier;
-
-                const Length circumference = diameter * M_PI;
-
-                // rotations * circumference of wheel
-                distance += rotations * circumference *
-                            (this->rpm / getGearingRPM(gearing));
-
-                used_motor_count++;
-            }
-        }
-
-        if (used_motor_count != 0)
-            distance /= static_cast<double>(used_motor_count);
-        return distance;
-    }
-
-    void init() override {
-        last_distance = calculateDistance();
-    }
+    void init() override {}
 
     void update() override {
-        Length current_distance = calculateDistance();
+        Length res = 0_in;
+        double count = 0;
+        for (auto position : motors->get_raw_position_all(NULL)) {
+            if (position == PROS_ERR) continue;
 
-        delta_distance = current_distance - last_distance;
+            Number rotations =
+              (rpm * static_cast<double>(position)) / (3600_rpm * 50.0);
 
-        last_distance = current_distance;
+            res += rotations * (diameter * M_PI);
+            count += 1.0;
+        }
+
+        Length current = INFINITY * m;
+
+        if (count != 0) {
+            current = res / count;
+        }
+
+        if (std::isfinite(current.internal()) && last_distance) {
+            delta_distance = current - *last_distance;
+        } else {
+            delta_distance = 0_m;
+        }
+
+        last_distance = current;
     }
 
     Length getDeltaDistance() override {
@@ -163,22 +103,19 @@ class MotorGroupTracking : public TrackingWheel {
 template<trackingOrientation tracking_orientation>
 class OdometryTracking : public TrackingWheel {
   private:
-    Length last_distance;
-    int32_t last_position;
-
-    Length delta_distance;
-
-    Length offset;
-
+    pros::Rotation* rotation_sensor;
     Length diameter;
     double gear_ratio;
+    Length offset;
+
+    int32_t last_position;
+    Length delta_distance;
 
     bool available = true;
 
-    // makes it so that when available changes to true, it is not immediately used
+    // makes it so that when available changes to true, it is not immediately
+    // used
     bool available_changed = false;
-
-    pros::Rotation* rotation_sensor;
 
   public:
     OdometryTracking(pros::Rotation* rotation_sensor,
@@ -213,9 +150,9 @@ class OdometryTracking : public TrackingWheel {
     void update() override {
         if (rotation_sensor == nullptr) {
             // doesn't print always to let user see other possible messsages
-            if(available){
-                printf("WARNING: ROTATION IS NULL - Check config for nullptr! - "
-                        "remove from list of trackers if this tracker is not used\n");
+            if (available) {
+                printf(
+                  "WARNING: ROTATION IS NULL - Check config for nullptr! " "- " "remove from list of trackers if this tracker is " "not used\n");
             }
             available = false;
             available_changed = false;
@@ -224,7 +161,7 @@ class OdometryTracking : public TrackingWheel {
 
         if (!rotation_sensor->is_installed()) {
             // doesn't print always to let user see other possible messsages
-            if(available){
+            if (available) {
                 printf("WARNING: ROTATION NOT CONNECTED!\n");
             }
             available = false;
@@ -232,8 +169,8 @@ class OdometryTracking : public TrackingWheel {
             return;
         }
 
-        // if the sensor was not available the function would have returned by now
-        // this means that the sensor is recoverable
+        // if the sensor was not available the function would have returned by
+        // now this means that the sensor is recoverable
         if (!available) {
             // we could be able to recover and still use the tracker
             rotation_sensor->set_data_rate(5);

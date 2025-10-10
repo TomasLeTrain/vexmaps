@@ -21,11 +21,6 @@ struct SmootherConfig {
     double beta_x = 1;
     double beta_y = 1;
     double beta_theta = 1;
-
-    // determines how much a pose delta measurement influences the velocity
-    double beta_vx = 1;
-    double beta_vy = 1;
-    double beta_vtheta = 1;
 };
 
 class SmootherModel : public LocalizationModel {
@@ -40,7 +35,6 @@ class SmootherModel : public LocalizationModel {
     // used by pose delta measurement
     units::Pose last_pose_estimate = units::Pose();
     units::Pose pose_estimate = units::Pose();
-    units::VelocityPose velocity_estimate = units::VelocityPose();
 
     units::Pose last_local_estimate = units::Pose();
 
@@ -74,7 +68,6 @@ class SmootherModel : public LocalizationModel {
         latest_timestamp = from_msec(pros::millis());
     }
 
-    // TODO: switch to using doubles for this as computations are cheap
     void update() override {
         std::lock_guard lock(m_mutex);
         Time current_timestamp = from_msec(pros::millis());
@@ -82,78 +75,38 @@ class SmootherModel : public LocalizationModel {
         latest_delta_time = current_timestamp - latest_timestamp;
         latest_timestamp = current_timestamp;
 
-        // TODO: actually only get the global updates instead of all updates
-        // from pf or else its likely bad
-
-        Time delta_time = latest_delta_time;
-
         Time current_local_delta_timestamp =
           local_delta_model->getLatestUpdateTimestamp();
 
         Time current_pose_timestamp = pose_model->getLatestUpdateTimestamp();
 
-        units::Pose previous_pose_estimate = pose_estimate;
-
-        // calculate the predictions first using the transition equations:
-        units::Pose pose_prediction =
-          units::Pose((pose_estimate + velocity_estimate * delta_time),
-                      pose_estimate.orientation +
-                        velocity_estimate.orientation * delta_time);
-
-        units::VelocityPose velocity_prediction = velocity_estimate;
-
-        // allows multiple sensors to affect the final estimate
-        pose_estimate = pose_prediction;
-        velocity_estimate = velocity_prediction;
+        // update last_pose
+        last_pose_estimate = pose_estimate;
 
         bool applied_local = false;
         bool applied_global = false;
 
         // update steps get performed independently
 
-        // only correct velocity if we have a new pose measurement
+        // only use if we have a new delta measurement
         if (current_local_delta_timestamp != last_local_delta_timestamp) {
-
-            Time local_delta_measurement_delta_time =
-              current_local_delta_timestamp - last_local_delta_timestamp;
 
             units::Pose pose_delta_measurement =
               local_delta_model->getGlobalPoseDelta();
 
-            velocity_estimate.x =
-              velocity_estimate.x +
-              config.beta_vx *
-                (pose_delta_measurement.x / local_delta_measurement_delta_time -
-                 velocity_estimate.x);
+            units::Pose new_pose { pose_delta_measurement + last_local_estimate,
+                                   pose_delta_measurement.orientation +
+                                     last_local_estimate.orientation };
 
-            velocity_estimate.y =
-              velocity_estimate.y +
-              config.beta_vy *
-                (pose_delta_measurement.y / local_delta_measurement_delta_time -
-                 velocity_estimate.y);
-
-            velocity_estimate.orientation =
-              velocity_estimate.orientation +
-              config.beta_vtheta * (pose_delta_measurement.orientation /
-                                      local_delta_measurement_delta_time -
-                                    velocity_estimate.orientation);
+            units::Pose difference { new_pose - pose_estimate,
+                                     new_pose.orientation -
+                                       pose_estimate.orientation };
 
             // update pose estimate as well
-            pose_estimate.x =
-              pose_estimate.x + config.beta_x * ((pose_delta_measurement.x +
-                                                  last_local_estimate.x) -
-                                                 pose_estimate.x);
-
-            pose_estimate.y =
-              pose_estimate.y + config.beta_y * ((pose_delta_measurement.y +
-                                                  last_local_estimate.y) -
-                                                 pose_estimate.y);
-
-            pose_estimate.orientation =
-              pose_estimate.orientation +
-              config.beta_theta * ((pose_delta_measurement.orientation +
-                                    last_local_estimate.orientation) -
-                                   pose_estimate.orientation);
+            pose_estimate.x += config.beta_x * difference.x;
+            pose_estimate.y += config.beta_y * difference.y;
+            pose_estimate.orientation +=
+              config.beta_theta * difference.orientation;
 
             last_local_delta_timestamp = current_local_delta_timestamp;
             applied_local = true;
@@ -161,16 +114,14 @@ class SmootherModel : public LocalizationModel {
 
         // only correct pose if we have a new pose measurement
         if (current_pose_timestamp != last_pose_timestamp &&
-            pose_model->getConfidence() != std::nullopt) {
+            // only use if it measures the global directly
+            pose_model->getConfidence()) {
             units::Pose pose_measurement = pose_model->getPose();
 
-            pose_estimate.x =
-              pose_estimate.x +
-              config.alpha_x * (pose_measurement.x - pose_estimate.x);
+            units::V2Position difference = pose_measurement - pose_estimate;
 
-            pose_estimate.y =
-              pose_estimate.y +
-              config.alpha_y * (pose_measurement.y - pose_estimate.y);
+            pose_estimate.x += config.alpha_x * difference.x;
+            pose_estimate.y += config.alpha_y * difference.y;
 
             // only good if pose has an orientation measurement
             // pose_estimate.orientation =
@@ -204,7 +155,6 @@ class SmootherModel : public LocalizationModel {
         pose_estimate = new_pose;
         last_pose_estimate = new_pose;
         last_local_estimate = new_pose;
-        velocity_estimate = units::VelocityPose();
 
         // since only the local delta from this is used it isn't really needed,
         // however to keep consistency its still set

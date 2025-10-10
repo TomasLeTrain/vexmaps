@@ -5,7 +5,6 @@
 #include "units/Pose.hpp"
 #include "units/Vector2D.hpp"
 #include "units/units.hpp"
-#include "vexmaps/mcl/asm_functions.hpp"
 #include "vexmaps/mcl/config.hpp"
 #include "vexmaps/mcl/sensor.hpp"
 #include "vexmaps/mcl/utils.hpp"
@@ -20,14 +19,11 @@ template<class DistanceSensorConfig>
 class DistanceSensorModel : public Sensor {
 
     pros::Distance* distance_sensor;
-
-    Length measured_distance = 0_m;
-
     units::Pose offsets;
+    std::string name;
 
     units::Pose rotated_offsets = { 0_m, 0_m, 0_stDeg };
-
-    std::string name;
+    Length measured_distance = 0_m;
 
     // determines whether or not readings from this sensor are used - false when
     // there are no measurements
@@ -59,12 +55,16 @@ class DistanceSensorModel : public Sensor {
     FLength ver_wall_coeff;
     float expFactor;
 
+    // used for getExpected
+    FLength horizontal_wall_length;
+    FLength vertical_wall_length;
+
   public:
     DistanceSensorModel(pros::Distance* distance_sensor,
                         const units::Pose offset,
                         std::string name)
-        : offsets(offset),
-          distance_sensor(std::move(distance_sensor)),
+        : distance_sensor(std::move(distance_sensor)),
+          offsets(offset),
           name(name) {}
 
     void update(Angle angle) override {
@@ -81,7 +81,7 @@ class DistanceSensorModel : public Sensor {
         const int32_t measured_mm = distance_sensor->get();
 
         measured_distance = from_mm(measured_mm);
-		f_measured_distance = measured_distance.internal();
+        f_measured_distance = measured_distance.internal();
 
         // distance sensor doesn't measure anything
         exit = measured_mm == 9999 || (!enabled);
@@ -231,185 +231,18 @@ class DistanceSensorModel : public Sensor {
         return vaddq_f32(normal_dist, VMaskedConstantFactor);
     }
 
-    inline void VdistanceList(float* res, float* x, float* y, uint32_t len) {
-        // do some processing here
-    }
-
-    // calculates the distance sensor pdf for each (x,y) pair
-    // requires various lists to save temporary results
-    inline void VevaluateList(float* x,
-                              float* y,
-                              float* curr_weights,
-                              float* tmp_weights,
-                              float* tmp_weights2,
-                              uint32_t len) {
-        // likley gets optimized to memset
-        for (int i = 0; i < len; i++) {
-            curr_weights[i] = 0;
-        }
-
-        // build result on the curr_weights list
-        // first do the distance calculations
-        VdistanceList(tmp_weights, x, y);
-
-        // here tmp_weights = distance to wall
-        VNormalDistributionPDF<DistanceSensorConfig::std_deviation,
-                               DistanceSensorConfig::normalCoeff>(tmp_weights,
-                                                                  curr_weights,
-                                                                  len,
-																  f_measured_distance);
-        // also apply the dist / random factors based on this distance
-
-		float matchloader1x = 0;
-		float matchloader1y = 0;
-
-		float matchloader2x = 0;
-		float matchloader2y = 0;
-
-		float matchloader_radius = 0;
-
-        // now calculate intersections with matchloaders - overrides whatever
-        // was in tmp_weights
-		circleIntersection(tmp_weights,
-                           x,
-                           y,
-                           len,
-                           this->fcosa,
-                           this->fsina,
-                           matchloader1x,
-                           matchloader1y,
-                           matchloader_radius);
-
-        // apply the normal distribution for this matchloader
-        VNormalDistributionPDF<DistanceSensorConfig::std_deviation,
-                               DistanceSensorConfig::normalCoeff>(tmp_weights,
-                                                                  curr_weights,
-                                                                  len,
-																  f_measured_distance);
-        // now do the same for the other matchloader
-        circleIntersection(tmp_weights,
-                           x,
-                           y,
-                           len,
-                           this->fcosa,
-                           this->fsina,
-                           matchloader2x,
-                           matchloader2y,
-                           matchloader_radius);
-
-        // apply the normal distribution for this matchloader
-        VNormalDistributionPDF<DistanceSensorConfig::std_deviation,
-                               DistanceSensorConfig::normalCoeff>(tmp_weights,
-                                                                  curr_weights,
-                                                                  len,
-																  f_measured_distance);
-
-        // check top center goal - modeled as a line segment
-        raySegmentDistance(tmp_weights,
-                           x,
-                           y,
-                           len,
-                           this->fcosa,
-                           this->fsina,
-                           0,  // x1
-                           0,  // y1
-                           0,  // x2
-                           0); // y2
-        // apply the normal distribution for this goal
-        VNormalDistributionPDF<DistanceSensorConfig::std_deviation,
-                               DistanceSensorConfig::normalCoeff>(tmp_weights,
-                                                                  curr_weights,
-                                                                  len,
-																  f_measured_distance);
-        // check bottom center goal - modeled as a line segment
-        raySegmentDistance(tmp_weights,
-                           x,
-                           y,
-                           len,
-                           this->fcosa,
-                           this->fsina,
-                           0,  // x1
-                           0,  // y1
-                           0,  // x2
-                           0); // y2
-        
-        // apply the normal distribution for this goal
-        VNormalDistributionPDF<DistanceSensorConfig::std_deviation,
-                               DistanceSensorConfig::normalCoeff>(tmp_weights,
-                                                                  curr_weights,
-                                                                  len,
-																  f_measured_distance);
-        // check -y top long goals - use two circles to model this
-        // checks left
-        circleIntersection(tmp_weights,
-                           x,
-                           y,
-                           len,
-                           this->fcosa,
-                           this->fsina,
-                           0,
-                           0,
-                           2);
-        // checks right
-        circleIntersection(tmp_weights2,
-                           x,
-                           y,
-                           len,
-                           this->fcosa,
-                           this->fsina,
-                           0,
-                           0,
-                           2);
-
-        // merges both - takes the minimum of both
-        for (int i = 0; i < len; i++) {
-            tmp_weights[i] = std::min(tmp_weights[i], tmp_weights2[i]);
-        }
-
-        // apply the normal distribution for this goal
-        VNormalDistributionPDF<DistanceSensorConfig::std_deviation,
-                               DistanceSensorConfig::normalCoeff>(tmp_weights,
-                                                                  curr_weights,
-                                                                  len,
-																  f_measured_distance);
-
-        // check y+ long goal - use two circles to model this
-        // checks left
-        circleIntersection(tmp_weights,
-                           x,
-                           y,
-                           len,
-                           this->fcosa,
-                           this->fsina,
-                           0,
-                           0,
-                           2);
-        // checks right
-        circleIntersection(tmp_weights2,
-                           x,
-                           y,
-                           len,
-                           this->fcosa,
-                           this->fsina,
-                           0,
-                           0,
-                           2);
-
-        // merges both - takes the minimum of both
-        for (int i = 0; i < len; i++) {
-            tmp_weights[i] = std::min(tmp_weights[i], tmp_weights2[i]);
-        }
-
-        // apply the normal distribution for this goal
-        VNormalDistributionPDF<DistanceSensorConfig::std_deviation,
-                               DistanceSensorConfig::normalCoeff>(tmp_weights,
-                                                                  curr_weights,
-                                                                  len,
-																  f_measured_distance);
-    }
-
+    // returns x and y coordinates for which the distance sensor would match
+    // measurements.
+    // can be used to easily do distance sensor resets
     std::optional<units::V2FPosition> getExpected() override {
-        return std::nullopt;
+        if (exit) {
+            return std::nullopt;
+        }
+
+        return units::V2Position {
+            horizontal_wall_length - measured_distance * fcosa,
+            vertical_wall_length - measured_distance * fsina
+        };
     }
 
     void disable() override {

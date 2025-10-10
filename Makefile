@@ -14,11 +14,11 @@ INCDIR=$(ROOT)/include
 
 WARNFLAGS+=
 EXTRA_CFLAGS=
-EXTRA_CXXFLAGS=-Wall
+EXTRA_CXXFLAGS=-Wunused-variable
 
 LIBDIR=$(INCDIR)/$(LIBNAME)
 
-MAKEFLAGS=-j8
+MAKEFLAGS=-j
 
 # Set to 1 to enable hot/cold linking
 # USE_PACKAGE:=1

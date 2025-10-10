@@ -24,10 +24,9 @@ class ParticleFilter {
     alignas(16) FLength y[N];
     alignas(16) float weights[N];
 
-    std::vector<Sensor*> sensors;
-
     BasePfMotionModel* motion_model;
     PFConfiguration PFConfig;
+    std::vector<Sensor*> sensors;
 
     // global pose delta from the base motion model
     units::FPose globalPoseDelta;

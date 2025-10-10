@@ -6,8 +6,6 @@
 #include "units/units.hpp"
 #include "vexmaps/api.hpp"
 #include <initializer_list>
-#include "tests/circle_intersection_test.hpp"
-#include "tests/distribution_tests.hpp"
 
 constexpr size_t particle_count = 500;
 // constexpr size_t particle_count = 16384;
@@ -125,9 +123,6 @@ vexmaps::ModelManager model_manager(
 
 void initialize() {
     pros::c::serctl(SERCTL_DISABLE_COBS,NULL);
-
-    testCircleIntersections();
-    testDistributions();
 
     // reset the imu
     imu.reset(true);

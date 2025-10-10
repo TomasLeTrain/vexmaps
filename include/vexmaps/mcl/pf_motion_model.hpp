@@ -57,9 +57,17 @@ template<typename ModelType>
     requires std::derived_from<ModelType, LocalizationModel>
 class PfMotionModel : public BasePfMotionModel {
   private:
+    /**
+     * @brief Used to get an estimate for the Robot's movements. Owned and
+     * managed by this class only.
+     */
+    ModelType base_motion_model;
+
     std::uniform_real_distribution<float> average_distance_distribution;
     std::uniform_real_distribution<float> angle_distribution;
     std::uniform_real_distribution<float> drift_distribution;
+
+    MotionModelConfig motionModelConfig;
 
     Vuniform_float32_t forwards_distribution;
 
@@ -86,14 +94,6 @@ class PfMotionModel : public BasePfMotionModel {
     Time last_precomputed_time = infinity() * sec;
 
     units::Pose accumulated_global_delta = units::Pose(), global_pose_delta;
-
-    MotionModelConfig motionModelConfig;
-
-    /**
-     * @brief Used to get an estimate for the Robot's movements. Owned and
-     * managed by this class only.
-     */
-    ModelType base_motion_model;
 
   protected:
     mutable pros::Mutex m_mutex;
