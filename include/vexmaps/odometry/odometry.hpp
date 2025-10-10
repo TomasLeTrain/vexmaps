@@ -88,7 +88,7 @@ class OdometryModel : public LocalizationModel {
         right_tracker->update();
 
         int available_vertical = 0;
-        int available_horizontal = 0;
+        // int available_horizontal = 0;
 
         for (auto&& tracker : vertical_trackers) {
             tracker->update();
@@ -96,7 +96,7 @@ class OdometryModel : public LocalizationModel {
         }
         for (auto&& tracker : horizontal_trackers) {
             tracker->update();
-            available_horizontal += tracker->getAvailable();
+            // available_horizontal += tracker->getAvailable();
         }
 
         bool drivetrain_enabled = false;

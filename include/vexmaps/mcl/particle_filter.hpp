@@ -9,7 +9,6 @@
 #include "vexmaps/mcl/pf_motion_model.hpp"
 #include "vexmaps/mcl/sensor.hpp"
 #include "vexmaps/mcl/utils.hpp"
-#include "vexmath/functions/vectorized_sqrt.hpp"
 #include <arm_neon.h>
 
 namespace vexmaps {
@@ -223,7 +222,7 @@ class ParticleFilter {
         const float max_weight_threshold =
           max_weight * PFConfig.weightPredictionFactor;
 
-        for (int i = 0; i < N; i++) {
+        for (size_t i = 0; i < N; i++) {
             if (max_weight_threshold <= weights[i]) {
                 weighted_x_sum += x[i] * weights[i];
                 weighted_y_sum += y[i] * weights[i];
@@ -297,10 +296,10 @@ class ParticleFilter {
 
     void endUpdate() {
         if (PFConfig.logging) {
-            printf("total weight: %f, time taken: %d, timestamp: ",
+            printf("total weight: %f, time taken: %lld, timestamp: ",
                    total_weight,
                    pros::micros() - start_time);
-            printf("%d\n", pros::millis());
+            printf("%ud\n", pros::millis());
             printf("things done:%d,%d,%d,%d\n",
                    this->appliedMotionModel,
                    this->weightedParticles,
@@ -309,7 +308,7 @@ class ParticleFilter {
             printf("prediction:%f,%f,%f\n",
                    this->prediction.x.convert(in),
                    this->prediction.y.convert(in),
-                   this->prediction.orientation.convert(deg));
+                   this->prediction.orientation.convert(Fdeg));
             printf("end generation\n");
         }
     }
@@ -436,7 +435,7 @@ class ParticleFilter {
 
         updatePredictionBasedOnParticles();
 
-        int zero_particles = 0;
+        // int zero_particles = 0;
 
         bool resampling = false;
 

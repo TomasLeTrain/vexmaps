@@ -14,7 +14,7 @@ INCDIR=$(ROOT)/include
 
 WARNFLAGS+=
 EXTRA_CFLAGS=
-EXTRA_CXXFLAGS=
+EXTRA_CXXFLAGS=-Wall
 
 LIBDIR=$(INCDIR)/$(LIBNAME)
 
@@ -25,8 +25,7 @@ MAKEFLAGS=-j8
 USE_PACKAGE:=0
 
 # Add libraries you do not wish to include in the cold image here
-# EXCLUDE_COLD_LIBRARIES:= $(FWDIR)/your_library.a
-EXCLUDE_COLD_LIBRARIES:=$(FWDIR)/units.a $(FWDIR)/vexmath.a
+EXCLUDE_COLD_LIBRARIES:=$(FWDIR)/float_units.a $(FWDIR)/vexmath.a
 
 # Set this to 1 to add additional rules to compile your project as a PROS library template
 IS_LIBRARY:=1
