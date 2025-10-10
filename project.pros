@@ -5,7 +5,7 @@
         "target": "v5",
         "templates": {
             "float_units": {
-                "location": "/home/tomass/.config/pros/templates/float_units@0.7.2",
+                "location": "/home/tomas/.config/pros/templates/float_units@0.7.3",
                 "metadata": {
                     "origin": "local"
                 },
@@ -13,19 +13,19 @@
                 "py/object": "pros.conductor.templates.local_template.LocalTemplate",
                 "supported_kernels": "^4.2.1",
                 "system_files": [
-                    "include/units/units.hpp",
-                    "include/units/Pose.hpp",
-                    "include/units/all.hpp",
-                    "include/units/Temperature.hpp",
-                    "firmware/float_units.a",
-                    "include/units/Vector2D.hpp",
-                    "include/units/Vector3D.hpp",
                     "firmware/hot-cold-asset.mk",
+                    "include/units/Temperature.hpp",
+                    "include/units/units.hpp",
+                    "firmware/float_units.a",
+                    "include/units/all.hpp",
+                    "include/units/Pose.hpp",
+                    "include/units/Vector3D.hpp",
+                    "include/units/Vector2D.hpp",
                     "include/units/Angle.hpp"
                 ],
                 "target": "v5",
                 "user_files": [],
-                "version": "0.7.2"
+                "version": "0.7.3"
             },
             "kernel": {
                 "location": "/home/tomass/.config/pros/templates/kernel@4.2.1",
@@ -614,7 +614,7 @@
                 "version": "9.2.0"
             },
             "vexmath": {
-                "location": "/home/tomass/.config/pros/templates/vexmath@0.0.6",
+                "location": "/home/tomas/.config/pros/templates/vexmath@0.0.7",
                 "metadata": {
                     "origin": "local"
                 },
@@ -623,23 +623,23 @@
                 "supported_kernels": "^4.2.1",
                 "system_files": [
                     "include/vexmath/fast_prng/Xoshiro128plus_vectorized.hpp",
-                    "include/vexmath/functions/vectorized_exp_log.hpp",
-                    "include/vexmath/fast_prng/SplitMix32.hpp",
-                    "include/vexmath/ziggurat/shared.hpp",
-                    "firmware/vexmath.a",
-                    "include/vexmath/fast_prng/Xoshiro128plus.hpp",
                     "include/vexmath/functions/vectorized_trig.hpp",
+                    "include/vexmath/ziggurat/shared.hpp",
                     "include/vexmath/functions/trig_taylor.hpp",
+                    "include/vexmath/functions/vectorized_sqrt.hpp",
+                    "firmware/vexmath.a",
+                    "include/vexmath/functions/vectorized_exp_log.hpp",
                     "include/vexmath/entropy.hpp",
                     "include/vexmath/ziggurat/exponential.hpp",
+                    "include/vexmath/fast_prng/Xoshiro128plus.hpp",
+                    "include/vexmath/ziggurat/normal.hpp",
+                    "include/vexmath/fast_prng/SplitMix32.hpp",
                     "include/vexmath/functions/vectorized_trig_taylor.hpp",
-                    "include/vexmath/functions/vectorized_sqrt.hpp",
-                    "include/vexmath/fast_prng/SplitMix64.hpp",
-                    "include/vexmath/ziggurat/normal.hpp"
+                    "include/vexmath/fast_prng/SplitMix64.hpp"
                 ],
                 "target": "v5",
                 "user_files": [],
-                "version": "0.0.6"
+                "version": "0.0.7"
             }
         },
         "upload_options": {},
