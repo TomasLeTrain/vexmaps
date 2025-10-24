@@ -16,13 +16,18 @@ namespace vexmaps {
 template<size_t N>
 class ParticleFilter {
   private:
-    // used for vectorization
-    static constexpr size_t remaining_particles = (N - (N % 4));
+    // divisible by 4,8,16, and 24
+    static constexpr size_t block_size = 48;
+    static constexpr size_t max_size = block_size * (N / block_size + 1);
 
-	// aligned to 16 bytes (4 floats)
-    alignas(16) FLength x[N];
-    alignas(16) FLength y[N];
-    alignas(16) float weights[N];
+    // aligned to 16 bytes (4 floats)
+    alignas(16) FLength x[max_size];
+    alignas(16) FLength y[max_size];
+    alignas(16) float weights[max_size];
+
+    // used for sensor operations
+    alignas(16) float tmp_list1[max_size];
+    alignas(16) float tmp_list2[max_size];
 
     BasePfMotionModel* motion_model;
     PFConfiguration PFConfig;
@@ -96,8 +101,7 @@ class ParticleFilter {
         appliedMotionModel = true;
 
         if (PFConfig.usingVectorizedMotion) {
-
-            for (size_t i = 0; i < remaining_particles; i += 4) {
+            for (size_t i = 0; i < N; i += 4) {
                 float32x4_t motionDataX, motionDataY;
                 motion_model->VnoisyGlobalDelta(&motionDataX, &motionDataY);
 
@@ -109,13 +113,6 @@ class ParticleFilter {
 
                 vst1q_f32((float*)&x[i], Vx);
                 vst1q_f32((float*)&y[i], Vy);
-            }
-            // proccess remaining
-            for (size_t i = remaining_particles; i < N; i++) {
-                units::V2Position noisy_global_delta =
-                  motion_model->noisyGlobalDelta();
-                x[i] += noisy_global_delta.x;
-                y[i] += noisy_global_delta.y;
             }
         } else {
             for (size_t i = 0; i < N; i++) {
@@ -164,9 +161,18 @@ class ParticleFilter {
 
         for (auto&& sensor : this->sensors) {
             if (sensor->hasAvailableReading()) {
+                if (sensor->canProcessArray()) {
+                    // sensor can process in a list, use
+                    sensor->evaluate_array(tmp_list1, x, y, tmp_list2, N);
+
+                    // multiply with actual weights
+                    for (int i = 0; i < N; i++) {
+                        weights[i] *= tmp_list1[i];
+                    }
+                }
                 // we assume the weights are valid (not infinity)
-                if (sensor->getVectorized()) {
-                    for (size_t i = 0; i < remaining_particles; i += 4) {
+                else if (sensor->getVectorized()) {
+                    for (size_t i = 0; i < N; i += 4) {
                         float32x4_t Vx = vld1q_f32((float*)&x[i]);
                         float32x4_t Vy = vld1q_f32((float*)&y[i]);
                         float32x4_t current_weights = vld1q_f32(&weights[i]);
@@ -177,16 +183,6 @@ class ParticleFilter {
                           vmulq_f32(current_weights, sensor_weights);
 
                         vst1q_f32(&weights[i], current_weights);
-                    }
-
-                    // process remaining particles (if any)
-                    for (size_t i = remaining_particles; i < N; i++) {
-                        const float sensor_weight =
-                          sensor->evaluate(x[i], y[i]);
-
-                        if (std::isfinite(sensor_weight)) {
-                            weights[i] *= sensor_weight;
-                        }
                     }
                 } else {
                     for (size_t i = 0; i < N; i++) {
@@ -471,9 +467,9 @@ class ParticleFilter {
      */
     void initNormal(const units::FPose pose, const FLength std_deviation) {
         std::normal_distribution<float> x_dist(pose.x.internal(),
-                                        std_deviation.internal());
+                                               std_deviation.internal());
         std::normal_distribution<float> y_dist(pose.y.internal(),
-                                        std_deviation.internal());
+                                               std_deviation.internal());
         for (size_t i = 0; i < N; i++) {
             x[i] = x_dist(rng) * Fm;
             y[i] = y_dist(rng) * Fm;
@@ -492,9 +488,9 @@ class ParticleFilter {
                      const FLength max_y,
                      const FAngle orientation) {
         std::uniform_real_distribution<float> x_dist(min_x.internal(),
-                                              max_x.internal());
+                                                     max_x.internal());
         std::uniform_real_distribution<float> y_dist(min_y.internal(),
-                                              max_y.internal());
+                                                     max_y.internal());
 
         for (size_t i = 0; i < N; i++) {
             x[i] = x_dist(rng) * Fm;
@@ -534,11 +530,11 @@ class ParticleFilter {
         return motion_model->getDistanceTraveled();
     }
 
-    void setDisabled(bool new_state){
+    void setDisabled(bool new_state) {
         disabled = new_state;
     }
 
-    bool getDisabled(){
+    bool getDisabled() {
         return disabled;
     }
 };
