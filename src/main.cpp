@@ -137,16 +137,23 @@ vexmaps::ModelManager model_manager(
   &smoother_model);
 
 void initialize() {
-    pros::c::serctl(SERCTL_DISABLE_COBS, NULL);
+    std::cout << "entered initialize" << std::endl;
+    // pros::c::serctl(SERCTL_DISABLE_COBS, NULL);
 
     // reset the imu
-    imu.reset(true);
+    // imu.reset(true);
 
-	// must read map before any distance sensor gets used
-	map_reader.read("/usd/field.map");
+    // must read map before any distance sensor gets used
+
+    auto start_time = pros::millis();
+    // map_reader.read("/usd/field.map");
+    map_reader.read_compressed("/usd/field.map.compressed");
+    auto end_time = pros::millis();
+    std::cout << "read map in " << end_time - start_time << " milliseconds."
+              << std::endl;
 
     // initialize all models and create their tasks
-    model_manager.init();
+    // model_manager.init();
 }
 
 void disabled() {}
@@ -156,53 +163,85 @@ void competition_initialize() {}
 void autonomous() {}
 
 void opcontrol() {
+
+    pros::Task([] {
+        std::cout << "entered opcontrol" << std::endl;
+
+        auto start_time = pros::micros();
+
+        float sum_of_dists = 0.0;
+
+        float theta2 = 60;
+        int theta = 0;
+
+        for (; theta <= 720; theta++) {
+            for (int x = -70; x <= 70; x++) {
+                for (int y = -70; y <= 70; y++) {
+                    FLength query1 = map_reader.query(x * Fin, y * Fin, theta * Fdeg);
+                    sum_of_dists += query1.internal();
+                }
+            }
+        }
+
+        auto end_time = pros::micros();
+
+        std::cout << "did queries in " << end_time - start_time
+                  << " microseconds." << std::endl;
+
+        auto query1 = map_reader.query(-15.6_Fin, 23.1_Fin, 60_FstDeg);
+        std::cout << "custom queyr " << (query1).convert(in) << std::endl;
+    });
+
+    // std::cout << query1 * in.internal() << std::endl;
+
     // set the pose
-    model_manager.setPose({ 48_in, -48_in, 0_stDeg });
-
-    // printf("doing more stuff\n");
-    bool manual_logging = true;
-
-    while (true) {
-        if (manual_logging) {
-            int start_time = pros::millis();
-            printf(
-              "start generation\nstart distances\nend distances\nstart " "parti" "cles" "\n");
-
-            printf("%.1f %.1f %.1f\n",
-                   odom_model.getPose().x.convert(in),
-                   odom_model.getPose().y.convert(in),
-                   0.0);
-            printf("%.1f %.1f %.1f\n",
-                   pf_model.getPose().x.convert(in),
-                   pf_model.getPose().y.convert(in),
-                   5.0);
-            printf("%.1f %.1f %.1f\n",
-                   smoother_model.getPose().x.convert(in),
-                   smoother_model.getPose().y.convert(in),
-                   10.0);
-
-            printf(
-              "end particles\ntotal weight: 0, time taken: 30000, " "timestamp:" " %d\n",
-              start_time);
-            printf("things done:1,1,0,%d\n", particle_count);
-            printf("prediction:%.1f,%.1f,%.1f\n",
-                   smoother_model.getPose().x.convert(in),
-                   smoother_model.getPose().y.convert(in),
-                   smoother_model.getPose().orientation.convert(deg));
-            printf("end generation\n");
-        }
-
-        if (master.get_digital_new_press(pros::E_CONTROLLER_DIGITAL_A)) {
-            smoother_model.setPose({ 48_in, -48_in, 90_stDeg });
-        }
-
-        // // Arcade control scheme
-        int dir = master.get_analog(
-          ANALOG_LEFT_Y); // Gets amount forward/backward from left joystick
-        int turn = master.get_analog(
-          ANALOG_RIGHT_X); // Gets the turn left/right from right joystick
-        leftMotors.move(dir + turn); // Sets left motor voltage
-        rightMotors.move(dir - turn); // Sets right motor voltage
-        pros::delay(20); // Run for 20 ms then update
-    }
+    // model_manager.setPose({ 48_in, -48_in, 0_stDeg });
+    //
+    // // printf("doing more stuff\n");
+    // bool manual_logging = true;
+    //
+    // while (true) {
+    //     if (manual_logging) {
+    //         int start_time = pros::millis();
+    //         printf(
+    //           "start generation\nstart distances\nend distances\nstart "
+    //           "parti" "cles" "\n");
+    //
+    //         printf("%.1f %.1f %.1f\n",
+    //                odom_model.getPose().x.convert(in),
+    //                odom_model.getPose().y.convert(in),
+    //                0.0);
+    //         printf("%.1f %.1f %.1f\n",
+    //                pf_model.getPose().x.convert(in),
+    //                pf_model.getPose().y.convert(in),
+    //                5.0);
+    //         printf("%.1f %.1f %.1f\n",
+    //                smoother_model.getPose().x.convert(in),
+    //                smoother_model.getPose().y.convert(in),
+    //                10.0);
+    //
+    //         printf(
+    //           "end particles\ntotal weight: 0, time taken: 30000, "
+    //           "timestamp:" " %d\n", start_time);
+    //         printf("things done:1,1,0,%d\n", particle_count);
+    //         printf("prediction:%.1f,%.1f,%.1f\n",
+    //                smoother_model.getPose().x.convert(in),
+    //                smoother_model.getPose().y.convert(in),
+    //                smoother_model.getPose().orientation.convert(deg));
+    //         printf("end generation\n");
+    //     }
+    //
+    //     if (master.get_digital_new_press(pros::E_CONTROLLER_DIGITAL_A)) {
+    //         smoother_model.setPose({ 48_in, -48_in, 90_stDeg });
+    //     }
+    //
+    //     // // Arcade control scheme
+    //     int dir = master.get_analog(
+    //       ANALOG_LEFT_Y); // Gets amount forward/backward from left joystick
+    //     int turn = master.get_analog(
+    //       ANALOG_RIGHT_X); // Gets the turn left/right from right joystick
+    //     leftMotors.move(dir + turn); // Sets left motor voltage
+    //     rightMotors.move(dir - turn); // Sets right motor voltage
+    //     pros::delay(20); // Run for 20 ms then update
+    // }
 }

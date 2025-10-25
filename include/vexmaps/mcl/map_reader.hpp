@@ -2,14 +2,19 @@
 
 #include "units/Angle.hpp"
 #include "units/units.hpp"
+#include <memory>
 
-template<int theta_res = 721, int x_res = 71, int y_res = 71>
+template<int theta_res = 721, int x_res = 141, int y_res = 141>
 class MapReader {
-    unsigned char map[theta_res][x_res][y_res];
+    // unsigned char map[theta_res][x_res][y_res];
+	std::unique_ptr<unsigned char[][x_res][y_res]> map;
+
     bool map_is_read;
 
   public:
     void read(std::string filename);
+
+    void read_compressed(std::string filename);
 
     int preprocess_angle(FAngle angle);
 
