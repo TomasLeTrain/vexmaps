@@ -5,6 +5,7 @@
 #include "units/Angle.hpp"
 #include "units/units.hpp"
 #include "vexmaps/api.hpp"
+#include "vexmaps/mcl/map_reader.hpp"
 #include <initializer_list>
 
 constexpr size_t particle_count = 500;
@@ -94,14 +95,28 @@ vexmaps::PfMotionModel<vexmaps::OdometryModel>
              &imu,
              false);
 
+MapReader<> map_reader;
+
 vexmaps::DistanceSensorModel<CustomDistanceSensorConfiguration>
-  front_laser_model(&front_sensor, { 5.25_in, 5.4375_in, 0_stDeg }, "front");
+  front_laser_model(&front_sensor,
+                    { 5.25_in, 5.4375_in, 0_stDeg },
+                    "front",
+                    &map_reader);
 vexmaps::DistanceSensorModel<CustomDistanceSensorConfiguration>
-  left_laser_model(&left_sensor, { 3_in, 5.25_in, 90_stDeg }, "left");
+  left_laser_model(&left_sensor,
+                   { 3_in, 5.25_in, 90_stDeg },
+                   "left",
+                   &map_reader);
 vexmaps::DistanceSensorModel<CustomDistanceSensorConfiguration>
-  back_laser_model(&back_sensor, { -4_in, -1.84375_in, 180_stDeg }, "back");
+  back_laser_model(&back_sensor,
+                   { -4_in, -1.84375_in, 180_stDeg },
+                   "back",
+                   &map_reader);
 vexmaps::DistanceSensorModel<CustomDistanceSensorConfiguration>
-  right_laser_model(&right_sensor, { 4.25_in, -5.375_in, 270_stDeg }, "right");
+  right_laser_model(&right_sensor,
+                    { 4.25_in, -5.375_in, 270_stDeg },
+                    "right",
+                    &map_reader);
 
 vexmaps::ParticleFilterModel<particle_count> pf_model(&odom_model,
                                                       { &front_laser_model,
@@ -122,10 +137,13 @@ vexmaps::ModelManager model_manager(
   &smoother_model);
 
 void initialize() {
-    pros::c::serctl(SERCTL_DISABLE_COBS,NULL);
+    pros::c::serctl(SERCTL_DISABLE_COBS, NULL);
 
     // reset the imu
     imu.reset(true);
+
+	// must read map before any distance sensor gets used
+	map_reader.read("/usd/field.map");
 
     // initialize all models and create their tasks
     model_manager.init();

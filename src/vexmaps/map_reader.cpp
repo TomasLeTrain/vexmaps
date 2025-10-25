@@ -7,11 +7,20 @@
 
 template<int theta_res, int x_res, int y_res>
 void MapReader<theta_res, x_res, y_res>::read(std::string filename) {
-    std::ifstream field_file(filename, std::ios::binary);
-    field_file.read(reinterpret_cast<char*>(map), sizeof map);
-    std::streamsize read_size = field_file.gcount();
-    assert((read_size == x_res * y_res * theta_res) &&
-           "Map size doesn't match!");
+    std::ifstream map_stream(filename, std::ios::binary);
+
+    map_stream.read(reinterpret_cast<char*>(map), sizeof map);
+
+    if (!map_stream) {
+        std::cerr << "Map reading was unsucessful!\n";
+        return;
+    }
+
+    std::streamsize read_size = map_stream.gcount();
+    if (read_size != x_res * y_res * theta_res) {
+        std::cerr << "Map size doesn't match!" << std::endl;
+        return;
+    }
 
     map_is_read = true;
 }

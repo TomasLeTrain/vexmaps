@@ -72,10 +72,12 @@ class DistanceSensorModel : public Sensor {
   public:
     DistanceSensorModel(pros::Distance* distance_sensor,
                         const units::Pose offset,
-                        std::string name)
+                        std::string name,
+                        MapReader<>* map_reader = nullptr)
         : distance_sensor(std::move(distance_sensor)),
           offsets(offset),
-          name(name) {}
+          name(name),
+          map_reader(map_reader) {}
 
     void update(Angle angle) override {
         // first check if the distance sensor is available, and if its not then
