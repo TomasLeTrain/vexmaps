@@ -1,6 +1,7 @@
 #include "main.h"
 #include "pros/abstract_motor.hpp"
 #include "pros/apix.h"
+#include "pros/distance.hpp"
 #include "pros/misc.h"
 #include "units/Angle.hpp"
 #include "units/units.hpp"
@@ -34,6 +35,27 @@ struct CustomDistanceSensorConfiguration {
 
     static constexpr bool logging = general_logging;
     // static constexpr bool logging = false;
+};
+
+class FakeDistance : public pros::Distance {
+  private:
+    Length fixed_length = 0_m;
+
+  public:
+    FakeDistance()
+        : pros::Distance(10) {}
+
+    void set_length(Length new_length) {
+        fixed_length = new_length;
+    };
+
+    bool is_installed() override {
+        return true;
+    }
+
+    std::int32_t get() override {
+        return static_cast<std::int32_t>(fixed_length.convert(mm));
+    }
 };
 
 // Inertial Sensor on port 8
@@ -100,6 +122,8 @@ vexmaps::PfMotionModel<vexmaps::OdometryModel>
 
 MapReader<> map_reader;
 
+FakeDistance fake_distance;
+
 vexmaps::DistanceSensorModel<CustomDistanceSensorConfiguration>
   front_laser_model(&front_sensor,
                     { 5.25_in, 5.4375_in, 0_stDeg },
@@ -120,6 +144,12 @@ vexmaps::DistanceSensorModel<CustomDistanceSensorConfiguration>
                     { 4.25_in, -5.375_in, 270_stDeg },
                     "right",
                     &map_reader);
+
+vexmaps::DistanceSensorModel<CustomDistanceSensorConfiguration>
+  fake_distance_model(&fake_distance,
+                      { 4.25_in, -5.375_in, 270_stDeg },
+                      "fake",
+                      &map_reader);
 
 vexmaps::ParticleFilterModel<particle_count> pf_model(&odom_model,
                                                       { &front_laser_model,
@@ -182,7 +212,7 @@ void opcontrol() {
         // }
         // }
 
-        int n = 20'000;
+        int n = 5'000;
 
         std::uniform_real_distribution<float> xs(-70, 70);
         std::uniform_real_distribution<float> ys(-70, 70);
@@ -191,29 +221,93 @@ void opcontrol() {
         Xoshiro128plus rng(10);
 
         std::vector<units::FPose> poses(n);
+        std::vector<FLength> v_x(n + 100);
+        std::vector<FLength> v_y(n + 100);
+        // std::vector<units::FPose> poses(n);
+
+        std::vector<float> curr_weights(n + 100);
+        std::vector<float> curr_weights2(n + 100);
+        std::vector<float> tmp_list(n + 100);
 
         for (int i = 0; i < n; i++) {
-            poses[i] = { xs(rng) * Fin, ys(rng) * Fin, thetas(rng) * Fdeg };
-			// if(i < 30){
-			// 	std::cout << poses[i].x << " " << poses[i].y << " " << poses[i].orientation << std::endl;
-			// }
+            poses[i] = { xs(rng) * in, ys(rng) * in, thetas(rng) * deg };
+            v_x[i] = poses[i].x;
+            v_y[i] = poses[i].y;
+            // if(i < 30){
+            // 	std::cout << poses[i].x << " " << poses[i].y << " " <<
+            // poses[i].orientation << std::endl;
+            // }
         }
 
-        auto start_time = pros::micros();
-        for (auto& pose : poses) {
-            FLength query1 = map_reader.query(pose.x, pose.y, pose.orientation);
-            sum_of_dists += query1.internal();
+        fake_distance.set_length(30_Fin);
+        fake_distance_model.update(60_FstDeg);
+
+        // poses[0] = { -20_in, 20_in, 60_stDeg };
+		v_x[0] = -20_in; 
+		v_y[0] = 20_in; 
+
+        auto wall_start_time = pros::micros();
+        // for (auto& pose : poses) {
+        //     FLength query1 = map_reader.query(pose.x, pose.y,
+        //     pose.orientation); sum_of_dists += query1.internal();
+        // }
+
+        fake_distance_model.evaluate_wall_array(curr_weights.data(),
+                                                v_x.data(),
+                                                v_y.data(),
+                                                tmp_list.data(),
+                                                n);
+
+        auto wall_end_time = pros::micros();
+        std::cout << "poses[0] is " << poses[0].x.convert(in) << " "
+                  << poses[0].y.convert(in) << " "
+                  << poses[0].orientation.convert(deg) << std::endl;
+
+        auto old_start_time = pros::micros();
+        for (int i = 0; i < n; i++) {
+            curr_weights2[i] = fake_distance_model.evaluate(v_x[i], v_y[i]);
+        }
+        auto old_end_time = pros::micros();
+
+        std::cout << "before all, curr_weights[0] = " << curr_weights[0]
+                  << std::endl;
+
+        // check if curr weights is valid
+        for (int i = 0; i < n; i++) {
+            if (auto diff = std::abs(curr_weights2[i] - curr_weights[i]);
+                diff > 1e-3) {
+                std::cout << "differ by: " << diff << std::endl;
+            }
+        }
+        std::cout << "stopped checking!" << std::endl;
+
+        std::cout << "new wall in  " << wall_end_time - wall_start_time
+                  << " microseconds." << std::endl;
+        std::cout << "old wall in  " << old_end_time - old_start_time
+                  << " microseconds." << std::endl;
+
+        auto all_start_time = pros::micros();
+        fake_distance_model.evaluate_array(curr_weights.data(),
+                                           v_x.data(),
+                                           v_y.data(),
+                                           tmp_list.data(),
+                                           n);
+        auto all_end_time = pros::micros();
+
+        // make it so the above is not optimized away
+        for (int i = 0; i < n; i++) {
+            sum_of_dists += curr_weights[i];
         }
 
-        auto end_time = pros::micros();
-
-        std::cout << "did queries in " << end_time - start_time
+        std::cout << "all wall in  " << all_end_time - all_start_time
                   << " microseconds." << std::endl;
 
         std::cout << "result of computation was " << sum_of_dists << std::endl;
 
-        auto query1 = map_reader.query(-15.6_Fin, 23.1_Fin, 60_FstDeg);
+        auto query1 = map_reader.query(-20_Fin, 20_Fin, 60_FstDeg);
         std::cout << "custom queyr " << (query1).convert(in) << std::endl;
+
+        std::cout << "curr weight[0] = " << curr_weights[0] << std::endl;
     });
 
     // std::cout << query1 * in.internal() << std::endl;

@@ -6,10 +6,14 @@
 
 template<int theta_res = 721, int x_res = 141, int y_res = 141>
 class MapReader {
+  private:
     // unsigned char map[theta_res][x_res][y_res];
-	std::unique_ptr<unsigned char[][x_res][y_res]> map;
+    std::unique_ptr<unsigned char[][x_res][y_res]> map;
 
     bool map_is_read;
+
+    // works for (x, y) alredy in inches and theta in 2 * degrees
+    float query_internal(float x, float y, float theta);
 
   public:
     void read(std::string filename);
@@ -20,9 +24,6 @@ class MapReader {
 
     // assumes theta is between [0,2pi]
     FLength query(FLength x, FLength y, FAngle theta);
-
-    // works for (x, y) alredy in inches and theta in 2 * degrees
-    float query(float x, float y, float theta);
 
     bool mapAvailable();
 };

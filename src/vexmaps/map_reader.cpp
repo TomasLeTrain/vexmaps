@@ -70,7 +70,9 @@ void MapReader<theta_res, x_res, y_res>::read_compressed(std::string filename) {
 
 // works for x, y alredy in inches * factor and theta in degrees * factor
 template<int theta_res, int x_res, int y_res>
-float MapReader<theta_res, x_res, y_res>::query(float x, float y, float theta) {
+float MapReader<theta_res, x_res, y_res>::query_internal(float x,
+                                                         float y,
+                                                         float theta) {
     // std::cout << "called with " << x << " " << y << " " << theta <<
     // std::endl;
 
@@ -121,12 +123,14 @@ float MapReader<theta_res, x_res, y_res>::query(float x, float y, float theta) {
 
     unsigned char query = map[itheta][ix][iy];
 
-    FLength query_distance = 2.5_Fm * static_cast<float>(query) / 254.0;
+    constexpr float query_factor = (2.5_m / 254.0).internal();
+
+    float query_distance = query_factor * static_cast<float>(query);
 
     // what should we do?
-    if (query == 255) query_distance = -2.5_Fm;
+    if (query == 255) query_distance = (-2.5_Fm).internal();
 
-    return query_distance.internal();
+    return query_distance;
 }
 
 // assumes theta is between [0,2pi]
@@ -137,7 +141,8 @@ MapReader<theta_res, x_res, y_res>::query(FLength x, FLength y, FAngle theta) {
     const FCurvature y_factor = (y_res - 1) / 70.0_in;
     const Divided<Number, Angle> theta_factor = (theta_res - 1) / 360.0_stDeg;
 
-    return FLength(query(x * x_factor, y * y_factor, theta * theta_factor));
+    return FLength(
+      query_internal(x * x_factor, y * y_factor, theta * theta_factor));
 };
 
 template<int theta_res, int x_res, int y_res>
