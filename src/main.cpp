@@ -6,7 +6,10 @@
 #include "units/units.hpp"
 #include "vexmaps/api.hpp"
 #include "vexmaps/mcl/map_reader.hpp"
+#include "vexmath/fast_prng/Xoshiro128plus.hpp"
 #include <initializer_list>
+#include <random>
+#include <vector>
 
 constexpr size_t particle_count = 500;
 // constexpr size_t particle_count = 16384;
@@ -167,26 +170,47 @@ void opcontrol() {
     pros::Task([] {
         std::cout << "entered opcontrol" << std::endl;
 
-        auto start_time = pros::micros();
-
         float sum_of_dists = 0.0;
 
         float theta2 = 60;
         int theta = 0;
 
-        for (; theta <= 720; theta++) {
-            for (int x = -70; x <= 70; x++) {
-                for (int y = -70; y <= 70; y++) {
-                    FLength query1 = map_reader.query(x * Fin, y * Fin, theta * Fdeg);
-                    sum_of_dists += query1.internal();
-                }
-            }
+        // for (; theta <= 720; theta++) {
+        // for (int x = -70; x <= 70; x++) {
+        //     for (int y = -70; y <= 70; y++) {
+        //     }
+        // }
+        // }
+
+        int n = 20'000;
+
+        std::uniform_real_distribution<float> xs(-70, 70);
+        std::uniform_real_distribution<float> ys(-70, 70);
+        std::uniform_real_distribution<float> thetas(0, 720);
+
+        Xoshiro128plus rng(10);
+
+        std::vector<units::FPose> poses(n);
+
+        for (int i = 0; i < n; i++) {
+            poses[i] = { xs(rng) * Fin, ys(rng) * Fin, thetas(rng) * Fdeg };
+			// if(i < 30){
+			// 	std::cout << poses[i].x << " " << poses[i].y << " " << poses[i].orientation << std::endl;
+			// }
+        }
+
+        auto start_time = pros::micros();
+        for (auto& pose : poses) {
+            FLength query1 = map_reader.query(pose.x, pose.y, pose.orientation);
+            sum_of_dists += query1.internal();
         }
 
         auto end_time = pros::micros();
 
         std::cout << "did queries in " << end_time - start_time
                   << " microseconds." << std::endl;
+
+        std::cout << "result of computation was " << sum_of_dists << std::endl;
 
         auto query1 = map_reader.query(-15.6_Fin, 23.1_Fin, 60_FstDeg);
         std::cout << "custom queyr " << (query1).convert(in) << std::endl;

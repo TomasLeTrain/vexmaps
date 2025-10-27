@@ -71,7 +71,8 @@ void MapReader<theta_res, x_res, y_res>::read_compressed(std::string filename) {
 // works for x, y alredy in inches * factor and theta in degrees * factor
 template<int theta_res, int x_res, int y_res>
 float MapReader<theta_res, x_res, y_res>::query(float x, float y, float theta) {
-    std::cout << "called with " << x << " " << y << " " << theta << std::endl;
+    // std::cout << "called with " << x << " " << y << " " << theta <<
+    // std::endl;
 
     constexpr float theta_factor = (theta_res - 1) / 360.0;
     // pi in deg
@@ -89,9 +90,9 @@ float MapReader<theta_res, x_res, y_res>::query(float x, float y, float theta) {
         theta = 2 * theta_factor * M_PI_deg - theta;
     }
 
-    std::cout << "theta before " << theta << std::endl;
+    // std::cout << "theta before " << theta << std::endl;
     if (theta < 0) theta += 2 * theta_factor * M_PI_deg;
-    std::cout << "theta after " << theta << std::endl;
+    // std::cout << "theta after " << theta << std::endl;
 
     int ix = std::round(std::abs(x));
     int iy = std::round(std::abs(y));
@@ -115,7 +116,8 @@ float MapReader<theta_res, x_res, y_res>::query(float x, float y, float theta) {
     //     return (-2.5_Fm).internal();
     // }
 
-    std::cout << "query at " << ix << " " << iy << " " << itheta << std::endl;
+    // std::cout << "query at " << ix << " " << iy << " " << itheta <<
+    // std::endl;
 
     unsigned char query = map[itheta][ix][iy];
 
@@ -131,13 +133,11 @@ float MapReader<theta_res, x_res, y_res>::query(float x, float y, float theta) {
 template<int theta_res, int x_res, int y_res>
 FLength
 MapReader<theta_res, x_res, y_res>::query(FLength x, FLength y, FAngle theta) {
-    const float x_factor = (x_res - 1) / 70.0;
-    const float y_factor = (y_res - 1) / 70.0;
-    const float theta_factor = (theta_res - 1) / 360.0;
+    const FCurvature x_factor = (x_res - 1) / 70.0_in;
+    const FCurvature y_factor = (y_res - 1) / 70.0_in;
+    const Divided<Number, Angle> theta_factor = (theta_res - 1) / 360.0_stDeg;
 
-    return FLength(query(x.convert(in) * x_factor,
-                         y.convert(in) * y_factor,
-                         theta.convert(deg) * theta_factor));
+    return FLength(query(x * x_factor, y * y_factor, theta * theta_factor));
 };
 
 template<int theta_res, int x_res, int y_res>
