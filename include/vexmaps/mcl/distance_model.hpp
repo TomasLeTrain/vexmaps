@@ -28,7 +28,7 @@ class DistanceSensorModel : public Sensor {
     // optional
     MapReader<>* map_reader;
 
-    units::Pose rotated_offsets = { 0_m, 0_m, 0_stDeg };
+    units::FPose rotated_offsets = { 0_m, 0_m, 0_stDeg };
     Length measured_distance = 0_m;
 
     // determines whether or not readings from this sensor are used - false when
@@ -95,13 +95,13 @@ class DistanceSensorModel : public Sensor {
         measured_distance = from_mm(measured_mm);
         f_measured_distance = measured_distance.internal();
 
-        map_angle = units::constrainAngle2pi(angle);
-
         // distance sensor doesn't measure anything
         exit = measured_mm == 9999 || (!enabled);
 
         // rotates offset and angle
-        rotated_offsets = rotatePose(offsets, angle);
+        rotated_offsets = FrotatePose(offsets, angle);
+
+        map_angle = units::constrainAngle2pi(rotated_offsets.orientation);
 
         // precomputed values
         double cosa = units::cos(rotated_offsets.orientation);
@@ -316,7 +316,6 @@ class DistanceSensorModel : public Sensor {
     void map_lookup_array(float* curr_weights,
                           FLength* x,
                           FLength* y,
-                          FAngle angle,
                           float* tmp_array,
                           int len) {
         if (map_reader == nullptr || !map_reader->mapAvailable()) {
@@ -327,20 +326,24 @@ class DistanceSensorModel : public Sensor {
             return;
         }
 
-        std::cout << "doing lookup" << std::endl;
+        // std::cout << "doing lookup" << std::endl;
 
         for (int i = 0; i < len; i++) {
-            if (i == 0) {
-                std::cout << "what " << x[i].convert(in) << " "
-                          << y[i].convert(in) << " " << angle.convert(deg)
-                          << std::endl;
-            }
-            tmp_array[i] = map_reader->query(x[i], y[i], angle).internal();
+            // if (i == 0) {
+            //     std::cout << "what " << x[i].convert(in) << " "
+            //               << y[i].convert(in) << " " << angle.convert(deg)
+            //               << std::endl;
+            // }
+            tmp_array[i] = map_reader
+                             ->query(x[i] + rotated_offsets.x,
+                                     y[i] + rotated_offsets.y,
+                                     map_angle)
+                             .internal();
         }
 
-        std::cout << "tmp[0] is " << tmp_array[0] << ", f_dist is "
-                  << f_measured_distance << ", curr_weights is "
-                  << curr_weights[0] << std::endl;
+        // std::cout << "tmp[0] is " << tmp_array[0] << ", f_dist is "
+        //           << f_measured_distance << ", curr_weights is "
+        //           << curr_weights[0] << std::endl;
 
         VNormalDistributionPDF(curr_weights,
                                tmp_array,
@@ -349,7 +352,7 @@ class DistanceSensorModel : public Sensor {
                                DistanceSensorConfig::std_deviation,
                                DistanceSensorConfig::normalCoeff);
 
-        std::cout << "curr_weights is now " << curr_weights[0] << std::endl;
+        // std::cout << "curr_weights is now " << curr_weights[0] << std::endl;
     }
 
     /**
@@ -381,7 +384,7 @@ class DistanceSensorModel : public Sensor {
         }
 
         evaluate_wall_array(curr_weights, x, y, tmp_array, len);
-        map_lookup_array(curr_weights, x, y, map_angle, tmp_array, len);
+        map_lookup_array(curr_weights, x, y, tmp_array, len);
     }
 
     // returns x and y coordinates for which the distance sensor would match

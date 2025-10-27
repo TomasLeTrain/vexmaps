@@ -21,7 +21,6 @@ LIBDIR=$(INCDIR)/$(LIBNAME)
 MAKEFLAGS=-j
 
 # Set to 1 to enable hot/cold linking
-# USE_PACKAGE:=1
 USE_PACKAGE:=1
 
 # Add libraries you do not wish to include in the cold image here

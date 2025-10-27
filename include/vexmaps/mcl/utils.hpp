@@ -29,8 +29,8 @@ inline units::FPose FrotatePose(const units::FPose& point,
 }
 
 inline units::Pose rotatePose(const units::Pose& point, const Angle& angle) {
-    const double sina = units::sin(angle).internal();
-    const double cosa = units::cos(angle).internal();
+    const Number sina = units::sin(angle);
+    const Number cosa = units::cos(angle);
 
     return { point.x * cosa - point.y * sina,
              point.x * sina + point.y * cosa,

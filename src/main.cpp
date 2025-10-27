@@ -216,7 +216,7 @@ void opcontrol() {
 
         std::uniform_real_distribution<float> xs(-70, 70);
         std::uniform_real_distribution<float> ys(-70, 70);
-        std::uniform_real_distribution<float> thetas(0, 720);
+        std::uniform_real_distribution<float> thetas(0, 360);
 
         Xoshiro128plus rng(10);
 
