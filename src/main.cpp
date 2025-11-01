@@ -179,8 +179,13 @@ void initialize() {
     // must read map before any distance sensor gets used
 
     auto start_time = pros::millis();
-    // map_reader.read("/usd/field.map");
     map_reader.read_compressed("/usd/field.map.compressed");
+
+	if(!map_reader.mapAvailable()){
+		std::cout << "try to read uncompressed map" << std::endl;;
+		map_reader.read("/usd/field.map");
+	}
+
     auto end_time = pros::millis();
     std::cout << "read map in " << end_time - start_time << " milliseconds."
               << std::endl;

@@ -7,7 +7,6 @@
 template<int theta_res = 721, int x_res = 141, int y_res = 141>
 class MapReader {
   private:
-    // unsigned char map[theta_res][x_res][y_res];
     std::unique_ptr<unsigned char[][x_res][y_res]> map;
 
     bool map_is_read;

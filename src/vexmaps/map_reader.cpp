@@ -11,6 +11,11 @@ template<int theta_res, int x_res, int y_res>
 void MapReader<theta_res, x_res, y_res>::read(std::string filename) {
     std::ifstream map_stream(filename, std::ios::binary);
 
+    if (!map_stream) {
+        std::cerr << "Map reading was unsucessful!" << std::endl;
+        return;
+    }
+
     // allocate memory
     map = std::make_unique<unsigned char[][x_res][y_res]>(theta_res);
 
@@ -24,7 +29,8 @@ void MapReader<theta_res, x_res, y_res>::read(std::string filename) {
 
     std::streamsize read_size = map_stream.gcount();
     if (read_size != x_res * y_res * theta_res) {
-        std::cerr << "Map size doesn't match!" << std::endl;
+        std::cerr << "Map size doesn't match: got " << read_size
+                  << " and expected " << x_res * y_res * theta_res << std::endl;
         return;
     }
 
@@ -35,10 +41,19 @@ template<int theta_res, int x_res, int y_res>
 void MapReader<theta_res, x_res, y_res>::read_compressed(std::string filename) {
     std::ifstream map_stream(filename, std::ios::binary | std::ios::ate);
 
-    auto file_size = map_stream.tellg();
+	// will equal -1 if file doesn't exit
+	auto file_size = map_stream.tellg();
+
+	// exit before vector is created
+    if (!map_stream || file_size == -1) {
+        std::cerr << "Map reading was unsucessful!\n";
+        return;
+    }
+
     std::vector<char> compressed_data(
       file_size); // construct string to stream size
     map_stream.seekg(0);
+
     map_stream.read(compressed_data.data(), file_size);
 
     if (!map_stream) {
@@ -57,6 +72,7 @@ void MapReader<theta_res, x_res, y_res>::read_compressed(std::string filename) {
                           x_res * y_res * theta_res);
     if (decompressed_size == 0) {
         std::cerr << "Map decompression failed" << std::endl;
+		return;
     }
 
     if (decompressed_size != x_res * y_res * theta_res) {
@@ -150,5 +166,5 @@ bool MapReader<theta_res, x_res, y_res>::mapAvailable() {
     return map_is_read;
 }
 
-// explicitly instantiate default
+// explicitly instantiate with default template params
 template class MapReader<>;
