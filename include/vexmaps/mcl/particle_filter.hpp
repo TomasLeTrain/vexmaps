@@ -21,13 +21,17 @@ class ParticleFilter {
     static constexpr size_t max_size = block_size * (N / block_size + 1);
 
     // aligned to 16 bytes (4 floats)
-    alignas(16) FLength x[max_size];
-    alignas(16) FLength y[max_size];
-    alignas(16) float weights[max_size];
+    alignas(16) std::array<FLength, max_size> x;
+    alignas(16) std::array<FLength, max_size> y;
+
+    alignas(16) std::array<FLength, max_size> resampling_x;
+    alignas(16) std::array<FLength, max_size> resampling_y;
+
+    alignas(16) std::array<float, max_size> weights;
 
     // used for sensor operations
-    alignas(16) float tmp_list1[max_size];
-    alignas(16) float tmp_list2[max_size];
+    alignas(16) std::array<float, max_size> tmp_list1;
+    alignas(16) std::array<float, max_size> tmp_list2;
 
     BasePfMotionModel* motion_model;
     PFConfiguration PFConfig;
@@ -105,14 +109,19 @@ class ParticleFilter {
                 float32x4_t motionDataX, motionDataY;
                 motion_model->VnoisyGlobalDelta(&motionDataX, &motionDataY);
 
-                float32x4_t Vx = vld1q_f32((float*)&x[i]);
-                float32x4_t Vy = vld1q_f32((float*)&y[i]);
+                float* const xi_pointer =
+                  reinterpret_cast<float*>(&x.data()[i]);
+                float* const yi_pointer =
+                  reinterpret_cast<float*>(&y.data()[i]);
+
+                float32x4_t Vx = vld1q_f32(xi_pointer);
+                float32x4_t Vy = vld1q_f32(yi_pointer);
 
                 Vx = vaddq_f32(Vx, motionDataX);
                 Vy = vaddq_f32(Vy, motionDataY);
 
-                vst1q_f32((float*)&x[i], Vx);
-                vst1q_f32((float*)&y[i], Vy);
+                vst1q_f32(xi_pointer, Vx);
+                vst1q_f32(yi_pointer, Vy);
             }
         } else {
             for (size_t i = 0; i < N; i++) {
@@ -126,7 +135,7 @@ class ParticleFilter {
 
     void updateSensors() {
         // perform the one time updates on the sensors
-        for (auto&& sensor : this->sensors) {
+        for (Sensor* sensor : sensors) {
             sensor->update(current_angle);
         }
     }
@@ -159,11 +168,15 @@ class ParticleFilter {
             weights[i] = 1.0;
         }
 
-        for (auto&& sensor : this->sensors) {
+        for (Sensor* sensor : sensors) {
             if (sensor->hasAvailableReading()) {
                 if (sensor->canProcessArray()) {
                     // sensor can process in a list, use
-                    sensor->evaluate_array(tmp_list1, x, y, tmp_list2, N);
+                    sensor->evaluate_array(tmp_list1.data(),
+                                           x.data(),
+                                           y.data(),
+                                           tmp_list2.data(),
+                                           N);
 
                     // multiply with actual weights
                     for (int i = 0; i < N; i++) {
@@ -173,16 +186,23 @@ class ParticleFilter {
                 // we assume the weights are valid (not infinity)
                 else if (sensor->getVectorized()) {
                     for (size_t i = 0; i < N; i += 4) {
-                        float32x4_t Vx = vld1q_f32((float*)&x[i]);
-                        float32x4_t Vy = vld1q_f32((float*)&y[i]);
-                        float32x4_t current_weights = vld1q_f32(&weights[i]);
+                        float* const xi_pointer =
+                          reinterpret_cast<float*>(&x.data()[i]);
+                        float* const yi_pointer =
+                          reinterpret_cast<float*>(&y.data()[i]);
+                        float* const weights_pointer = &weights.data()[i];
+
+                        float32x4_t Vx = vld1q_f32(xi_pointer);
+                        float32x4_t Vy = vld1q_f32(yi_pointer);
+                        float32x4_t current_weights =
+                          vld1q_f32(weights_pointer);
 
                         float32x4_t sensor_weights = sensor->Vevaluate(Vx, Vy);
 
                         current_weights =
                           vmulq_f32(current_weights, sensor_weights);
 
-                        vst1q_f32(&weights[i], current_weights);
+                        vst1q_f32(weights_pointer, current_weights);
                     }
                 } else {
                     for (size_t i = 0; i < N; i++) {
@@ -230,7 +250,7 @@ class ParticleFilter {
         updatePrediction(weighted_x_sum / weight_sum,
                          weighted_y_sum / weight_sum,
                          current_angle,
-                         // sets confidence to 1
+                         // sets confidence to 1, actual global update
                          1);
     }
 
@@ -249,17 +269,23 @@ class ParticleFilter {
         for (size_t i = 0; i < N; i++) {
             pointer = pointer + average_weight;
             // weight_sum = sum(weights[0...I])
-            while (weight_sum < pointer && I <= N - 2) {
+            while (weight_sum < pointer && I < N - 1) {
                 I++;
                 weight_sum = weight_sum + weights[I];
             }
 
-            x[i] = x[I];
-            y[i] = y[I];
-
-            // sets weight to average value
-            weights[i] = average_weight;
+            // x[i] = x[I];
+            // y[i] = y[I];
+            resampling_x[i] = x[I];
+            resampling_y[i] = y[I];
         }
+
+        // set x = resampling_x, y = resampling_y
+        std::swap(resampling_x, x);
+        std::swap(resampling_y, y);
+
+        // sets all weights to average value
+        std::ranges::fill(weights, average_weight);
     }
 
     void updateLostIterationCount() {
