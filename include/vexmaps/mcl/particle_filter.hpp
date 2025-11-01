@@ -233,7 +233,6 @@ class ParticleFilter {
         // sum of the weights of the particles included in the prediction
         float weight_sum = 0;
 
-        // TODO: vectorize
         const float max_weight_threshold =
           max_weight * PFConfig.weightPredictionFactor;
 

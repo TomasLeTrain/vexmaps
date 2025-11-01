@@ -43,7 +43,7 @@ class Sensor {
                                 FLength* x,
                                 FLength* y,
                                 float* tmp_array,
-                                int len) {
+                                size_t len) {
         assert(
           (false) &&
           "evaluate_array was called but implementation was never defined!");

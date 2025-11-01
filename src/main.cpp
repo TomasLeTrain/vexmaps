@@ -220,7 +220,7 @@ void opcontrol() {
 
         Xoshiro128plus rng(10);
 
-        std::vector<units::FPose> poses(n);
+        // std::vector<units::FPose> poses(n);
         std::vector<FLength> v_x(n + 100);
         std::vector<FLength> v_y(n + 100);
         // std::vector<units::FPose> poses(n);
@@ -230,21 +230,16 @@ void opcontrol() {
         std::vector<float> tmp_list(n + 100);
 
         for (int i = 0; i < n; i++) {
-            poses[i] = { xs(rng) * in, ys(rng) * in, thetas(rng) * deg };
-            v_x[i] = poses[i].x;
-            v_y[i] = poses[i].y;
-            // if(i < 30){
-            // 	std::cout << poses[i].x << " " << poses[i].y << " " <<
-            // poses[i].orientation << std::endl;
-            // }
+            v_x[i] = xs(rng) * in;
+            v_y[i] = ys(rng) * in;
+            // poses[i] = { v_x[i], v_y[i], thetas(rng) * deg };
         }
 
         fake_distance.set_length(30_Fin);
         fake_distance_model.update(60_FstDeg);
 
-        // poses[0] = { -20_in, 20_in, 60_stDeg };
-		v_x[0] = -20_in; 
-		v_y[0] = 20_in; 
+        v_x[0] = -20_in;
+        v_y[0] = 20_in;
 
         auto wall_start_time = pros::micros();
         // for (auto& pose : poses) {
@@ -252,16 +247,17 @@ void opcontrol() {
         //     pose.orientation); sum_of_dists += query1.internal();
         // }
 
-        fake_distance_model.evaluate_wall_array(curr_weights.data(),
-                                                v_x.data(),
-                                                v_y.data(),
-                                                tmp_list.data(),
-                                                n);
+        fake_distance_model.evaluate_wall_array(
+          curr_weights.data(),
+          reinterpret_cast<float*>(v_x.data()),
+          reinterpret_cast<float*>(v_y.data()),
+          tmp_list.data(),
+          n);
 
         auto wall_end_time = pros::micros();
-        std::cout << "poses[0] is " << poses[0].x.convert(in) << " "
-                  << poses[0].y.convert(in) << " "
-                  << poses[0].orientation.convert(deg) << std::endl;
+        // std::cout << "poses[0] is " << poses[0].x.convert(in) << " "
+        //           << poses[0].y.convert(in) << " "
+        //           << poses[0].orientation.convert(deg) << std::endl;
 
         auto old_start_time = pros::micros();
         for (int i = 0; i < n; i++) {

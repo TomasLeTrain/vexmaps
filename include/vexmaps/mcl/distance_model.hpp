@@ -234,25 +234,25 @@ class DistanceSensorModel : public Sensor {
     }
 
     void evaluate_wall_array(float* curr_weights,
-                             FLength* x,
-                             FLength* y,
+                             float* x,
+                             float* y,
                              float* tmp_array,
                              int len) {
         float32x4_t Vhor = vdupq_n_f32(Vhor_wall_coeff);
         float32x4_t Vver = vdupq_n_f32(Vver_wall_coeff);
 
         for (int i = 0; i < len; i += 16) {
-            float32x4_t Vx1 = vld1q_f32(reinterpret_cast<float*>(&x[i]));
-            float32x4_t Vy1 = vld1q_f32(reinterpret_cast<float*>(&y[i]));
+            float32x4_t Vx1 = vld1q_f32(&x[i]);
+            float32x4_t Vy1 = vld1q_f32(&y[i]);
 
-            float32x4_t Vx2 = vld1q_f32(reinterpret_cast<float*>(&x[i + 4]));
-            float32x4_t Vy2 = vld1q_f32(reinterpret_cast<float*>(&y[i + 4]));
+            float32x4_t Vx2 = vld1q_f32(&x[i + 4]);
+            float32x4_t Vy2 = vld1q_f32(&y[i + 4]);
 
-            float32x4_t Vx3 = vld1q_f32(reinterpret_cast<float*>(&x[i + 8]));
-            float32x4_t Vy3 = vld1q_f32(reinterpret_cast<float*>(&y[i + 8]));
+            float32x4_t Vx3 = vld1q_f32(&x[i + 8]);
+            float32x4_t Vy3 = vld1q_f32(&y[i + 8]);
 
-            float32x4_t Vx4 = vld1q_f32(reinterpret_cast<float*>(&x[i + 12]));
-            float32x4_t Vy4 = vld1q_f32(reinterpret_cast<float*>(&y[i + 12]));
+            float32x4_t Vx4 = vld1q_f32(&x[i + 12]);
+            float32x4_t Vy4 = vld1q_f32(&y[i + 12]);
 
             float32x4_t Vxx1 = vmulq_n_f32(Vx1, x_coeff);
             float32x4_t Vyy1 = vmulq_n_f32(Vy1, y_coeff);
@@ -300,8 +300,6 @@ class DistanceSensorModel : public Sensor {
 
         // gets vectorized?
         for (int i = 0; i < len; i++) {
-            // tmparray = expected - measured
-            //
             // measured <= expected ? expFactor : randomFactor
             // 0 <= (expected - measured) ? expFactor : randomFactor
             // 0 <= tmparray ? expFactor : randomFactor
@@ -319,10 +317,10 @@ class DistanceSensorModel : public Sensor {
                           float* tmp_array,
                           int len) {
         if (map_reader == nullptr || !map_reader->mapAvailable()) {
-            for (int i = 0; i < len; i++) {
-                // falls back to just adding a constant?
-                // curr_weights[i] += 0.1;
-            }
+			// falls back to just adding a constant?
+            // for (int i = 0; i < len; i++) {
+            //     // curr_weights[i] += 0.1;
+            // }
             return;
         }
 
@@ -341,49 +339,38 @@ class DistanceSensorModel : public Sensor {
                              .internal();
         }
 
-        // std::cout << "tmp[0] is " << tmp_array[0] << ", f_dist is "
-        //           << f_measured_distance << ", curr_weights is "
-        //           << curr_weights[0] << std::endl;
-
         VNormalDistributionPDF(curr_weights,
                                tmp_array,
                                len,
                                f_measured_distance,
+							   // TODO: change to have its own settings
                                DistanceSensorConfig::std_deviation,
                                DistanceSensorConfig::normalCoeff);
-
-        // std::cout << "curr_weights is now " << curr_weights[0] << std::endl;
     }
 
-    /**
-     * @brief Computes the PDF for all particles
-     *
-     * @param curr_weights array where the results get stored
-     * @param x pointer to array of x components
-     * @param y pointer to array of y components
-     * @param tmp_array pointer to array of temporary array
-     * @param len number of particles to evaluate
-     */
     void evaluate_array(float* curr_weights,
                         FLength* x,
                         FLength* y,
                         float* tmp_array,
-                        int len) override {
+                        size_t len) override {
 
-        // TODO: maybe multiply by some number <= 1.0 instead?
+		// TODO: maybe multiply by some number <= 1.0 instead?
         if (exit) {
-            for (int i = 0; i < len; i++) {
-                // all weights should be zero
-                curr_weights[i] = 1.0;
-            }
+			// TODO: this should never get called?
+			//
+			// makes it as if sensor did not get processed
+			std::fill(curr_weights, curr_weights + len, 1.0f);
             return;
         }
 
-        for (int i = 0; i < len; i++) {
-            curr_weights[i] = 0.0;
-        }
+		// set all curr_weights equal to zero
+		std::fill(curr_weights, curr_weights + len, 0.0f);
 
-        evaluate_wall_array(curr_weights, x, y, tmp_array, len);
+        evaluate_wall_array(curr_weights,
+                            reinterpret_cast<float*>(x),
+                            reinterpret_cast<float*>(y),
+                            tmp_array,
+                            len);
         map_lookup_array(curr_weights, x, y, tmp_array, len);
     }
 
