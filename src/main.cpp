@@ -27,11 +27,13 @@ struct CustomDistanceSensorConfiguration {
     // all floats without units are in meters
     static constexpr double exp_l = 1.5;
     static constexpr double std_deviation = (2_in).internal();
+    static constexpr double map_deviation = (3_in).internal();
 
     // all these should add to one
-    static constexpr double randomCoeff = 0.15;
-    static constexpr double expCoeff = 0.1;
-    static constexpr double normalCoeff = 0.75;
+    static constexpr double randomCoeff = 0.0;
+    static constexpr double expCoeff = 0.15;
+    static constexpr double normalCoeff = 0.6;
+    static constexpr double mapCoeff = 0.25;
 
     static constexpr bool logging = general_logging;
     // static constexpr bool logging = false;
@@ -147,7 +149,7 @@ vexmaps::DistanceSensorModel<CustomDistanceSensorConfiguration>
 
 vexmaps::DistanceSensorModel<CustomDistanceSensorConfiguration>
   fake_distance_model(&fake_distance,
-                      { 4.25_in, -5.375_in, 270_stDeg },
+                      { 0_in, 0_in, 0_stDeg },
                       "fake",
                       &map_reader);
 

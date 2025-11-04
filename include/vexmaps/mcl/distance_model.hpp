@@ -317,21 +317,14 @@ class DistanceSensorModel : public Sensor {
                           float* tmp_array,
                           int len) {
         if (map_reader == nullptr || !map_reader->mapAvailable()) {
-			// falls back to just adding a constant?
+            // falls back to just adding a constant?
             // for (int i = 0; i < len; i++) {
             //     // curr_weights[i] += 0.1;
             // }
             return;
         }
 
-        // std::cout << "doing lookup" << std::endl;
-
         for (int i = 0; i < len; i++) {
-            // if (i == 0) {
-            //     std::cout << "what " << x[i].convert(in) << " "
-            //               << y[i].convert(in) << " " << angle.convert(deg)
-            //               << std::endl;
-            // }
             tmp_array[i] = map_reader
                              ->query(x[i] + rotated_offsets.x,
                                      y[i] + rotated_offsets.y,
@@ -343,9 +336,8 @@ class DistanceSensorModel : public Sensor {
                                tmp_array,
                                len,
                                f_measured_distance,
-							   // TODO: change to have its own settings
-                               DistanceSensorConfig::std_deviation,
-                               DistanceSensorConfig::normalCoeff);
+                               DistanceSensorConfig::map_deviation,
+                               DistanceSensorConfig::mapCoeff);
     }
 
     void evaluate_array(float* curr_weights,
@@ -354,17 +346,17 @@ class DistanceSensorModel : public Sensor {
                         float* tmp_array,
                         size_t len) override {
 
-		// TODO: maybe multiply by some number <= 1.0 instead?
+        // TODO: maybe multiply by some number <= 1.0 instead?
         if (exit) {
-			// TODO: this should never get called?
-			//
-			// makes it as if sensor did not get processed
-			std::fill(curr_weights, curr_weights + len, 1.0f);
+            // TODO: this should never get called?
+            //
+            // makes it as if sensor did not get processed
+            std::fill(curr_weights, curr_weights + len, 1.0f);
             return;
         }
 
-		// set all curr_weights equal to zero
-		std::fill(curr_weights, curr_weights + len, 0.0f);
+        // set all curr_weights equal to zero
+        std::fill(curr_weights, curr_weights + len, 0.0f);
 
         evaluate_wall_array(curr_weights,
                             reinterpret_cast<float*>(x),

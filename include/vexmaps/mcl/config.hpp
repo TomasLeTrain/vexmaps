@@ -11,9 +11,11 @@ concept ValidDistanceConfig = requires {
     // clang-format off
     { Config::exp_l }         -> std::convertible_to<double>;
     { Config::std_deviation } -> std::convertible_to<double>;
+    { Config::map_deviation } -> std::convertible_to<double>;
     { Config::randomCoeff }   -> std::convertible_to<double>;
     { Config::expCoeff }      -> std::convertible_to<double>;
     { Config::normalCoeff }   -> std::convertible_to<double>;
+    { Config::mapCoeff }   -> std::convertible_to<double>;
     { Config::logging } -> std::convertible_to<bool>;
     // clang-format on
 };
