@@ -282,9 +282,6 @@ class ParticleFilter {
         // set x = resampling_x, y = resampling_y
         std::swap(resampling_x, x);
         std::swap(resampling_y, y);
-
-        // sets all weights to average value
-        std::ranges::fill(weights, average_weight);
     }
 
     void updateLostIterationCount() {
