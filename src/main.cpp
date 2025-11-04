@@ -159,7 +159,6 @@ vexmaps::ParticleFilterModel<particle_count> pf_model(&odom_model,
                                                         &back_laser_model,
                                                         &right_laser_model },
                                                       Pfconfig);
-
 vexmaps::SmootherModel
   smoother_model(&odom_model, &pf_model, vexmaps::SmootherConfig());
 
