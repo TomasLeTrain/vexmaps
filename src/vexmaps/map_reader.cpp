@@ -1,10 +1,13 @@
 #include "vexmaps/mcl/map_reader.hpp"
-#include "lz4/lz4.h"
 #include "units/Angle.hpp"
 #include "units/units.hpp"
+#include "zlib/zlib.h"
 #include <cassert>
 #include <fstream>
 #include <iostream>
+#include <memory>
+#include <mutex>
+#include <sys/types.h>
 #include <vector>
 
 template<int theta_res, int x_res, int y_res>
@@ -16,8 +19,9 @@ void MapReader<theta_res, x_res, y_res>::read(std::string filename) {
         return;
     }
 
-    // allocate memory
-    map = std::make_unique<unsigned char[][x_res][y_res]>(theta_res);
+    // only allocate if we haven't already
+    if (map.get() == nullptr)
+        map = std::make_unique<unsigned char[][x_res][y_res]>(theta_res);
 
     map_stream.read(reinterpret_cast<char*>(map.get()),
                     x_res * y_res * theta_res);
@@ -34,54 +38,82 @@ void MapReader<theta_res, x_res, y_res>::read(std::string filename) {
         return;
     }
 
-    map_is_read = true;
+    {
+        std::lock_guard lock(m_mutex);
+        map_is_read = true;
+    }
 }
 
 template<int theta_res, int x_res, int y_res>
 void MapReader<theta_res, x_res, y_res>::read_compressed(std::string filename) {
     std::ifstream map_stream(filename, std::ios::binary | std::ios::ate);
+    std::cout << "reading map!\n";
 
-	// will equal -1 if file doesn't exit
-	auto file_size = map_stream.tellg();
+    // will equal -1 if file doesn't exit
+    auto file_size = map_stream.tellg();
+    std::cout << "file size is " << file_size << std::endl;
 
-	// exit before vector is created
+    // exit before vector is created
     if (!map_stream || file_size == -1) {
         std::cerr << "Map reading was unsucessful!\n";
         return;
     }
 
-    std::vector<char> compressed_data(
-      file_size); // construct string to stream size
+    // ensure vector is not stored on the stack
+    std::unique_ptr<std::vector<char>> compressed_data =
+      std::make_unique<std::vector<char>>(std::vector<char>(file_size));
+
     map_stream.seekg(0);
 
-    map_stream.read(compressed_data.data(), file_size);
+    std::cout << "reading compressed data" << std::endl;
+    map_stream.read(compressed_data->data(), file_size);
 
     if (!map_stream) {
         std::cerr << "Map reading was unsucessful!\n";
         return;
     }
 
+    std::cout << "allocating map" << std::endl;
     // allocate memory
-    map = std::make_unique<unsigned char[][x_res][y_res]>(theta_res);
 
-    // decompress data
-    int decompressed_size =
-      LZ4_decompress_safe(reinterpret_cast<char*>(compressed_data.data()),
-                          reinterpret_cast<char*>(map.get()),
-                          compressed_data.size(),
-                          x_res * y_res * theta_res);
-    if (decompressed_size == 0) {
-        std::cerr << "Map decompression failed" << std::endl;
-		return;
-    }
+    // only allocate if we haven't already
+    if (map.get() == nullptr)
+        map = std::make_unique<unsigned char[][x_res][y_res]>(theta_res);
 
-    if (decompressed_size != x_res * y_res * theta_res) {
-        std::cerr << "Map size doesn't match: got " << decompressed_size
-                  << " and expected " << x_res * y_res * theta_res << std::endl;
+    std::cout << "decompressing" << std::endl;
+
+    // Allocate buffer for decompression
+    uLong decompressedLen = theta_res * x_res * y_res;
+
+    int result = uncompress(reinterpret_cast<Bytef*>(map.get()),
+                            &decompressedLen,
+                            reinterpret_cast<Bytef*>(compressed_data->data()),
+                            compressed_data->size());
+
+    if (result == Z_OK) {
+        std::cout << "decompression worked! compressed/uncompressed: "
+                  << compressed_data->size() << " " << decompressedLen
+                  << std::endl;
+    } else {
+        std::cerr << std::format("there was an error with code: {}!", result)
+                  << std::endl;
         return;
     }
 
-    map_is_read = true;
+    if (decompressedLen != theta_res * x_res * y_res) {
+        std::cerr << std::format("sizes don't match! expected/got: {},{}",
+                                 theta_res * x_res * y_res,
+                                 decompressedLen)
+                  << std::endl;
+        return;
+    }
+
+    std::cout << "everything went good" << std::endl;
+
+    {
+        std::lock_guard lock(m_mutex);
+        map_is_read = true;
+    }
 }
 
 // works for x, y alredy in inches * factor and theta in degrees * factor
@@ -163,6 +195,7 @@ MapReader<theta_res, x_res, y_res>::query(FLength x, FLength y, FAngle theta) {
 
 template<int theta_res, int x_res, int y_res>
 bool MapReader<theta_res, x_res, y_res>::mapAvailable() {
+    std::lock_guard lock(m_mutex);
     return map_is_read;
 }
 

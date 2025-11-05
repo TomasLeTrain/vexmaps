@@ -613,27 +613,6 @@
                 "user_files": [],
                 "version": "9.2.0"
             },
-            "lz4": {
-                "location": "/home/tomas/.config/pros/templates/lz4@1.10.0",
-                "metadata": {
-                    "origin": "local"
-                },
-                "name": "lz4",
-                "py/object": "pros.conductor.templates.local_template.LocalTemplate",
-                "supported_kernels": "^4.2.0",
-                "system_files": [
-                    "include/lz4/lz4.h",
-                    "include/lz4/lz4hc.h",
-                    "include/lz4/lz4file.h",
-                    "include/lz4/xxhash.h",
-                    "include/lz4/lz4frame.h",
-                    "include/lz4/lz4frame_static.h",
-                    "firmware/lz4.a"
-                ],
-                "target": "v5",
-                "user_files": [],
-                "version": "1.10.0"
-            },
             "vexmath": {
                 "location": "/home/tomas/.config/pros/templates/vexmath@0.0.7",
                 "metadata": {
@@ -661,6 +640,32 @@
                 "target": "v5",
                 "user_files": [],
                 "version": "0.0.7"
+            },
+            "zlib": {
+                "location": "/home/tomas/.config/pros/templates/zlib@0.0.1",
+                "metadata": {
+                    "origin": "local"
+                },
+                "name": "zlib",
+                "py/object": "pros.conductor.templates.local_template.LocalTemplate",
+                "supported_kernels": "^4.2.1",
+                "system_files": [
+                    "include/zlib/deflate.h",
+                    "include/zlib/trees.h",
+                    "include/zlib/inffast.h",
+                    "include/zlib/zlib.h",
+                    "include/zlib/crc32.h",
+                    "include/zlib/gzguts.h",
+                    "include/zlib/inflate.h",
+                    "include/zlib/zutil.h",
+                    "include/zlib/inftrees.h",
+                    "include/zlib/inffixed.h",
+                    "include/zlib/zconf.h",
+                    "firmware/zlib.a"
+                ],
+                "target": "v5",
+                "user_files": [],
+                "version": "0.0.1"
             }
         },
         "upload_options": {},

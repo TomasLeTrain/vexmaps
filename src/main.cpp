@@ -171,7 +171,7 @@ vexmaps::ModelManager model_manager(
   &smoother_model);
 
 void initialize() {
-    std::cout << "entered initialize" << std::endl;
+    // std::cout << "entered initialize" << std::endl;
     // pros::c::serctl(SERCTL_DISABLE_COBS, NULL);
 
     // reset the imu
@@ -180,11 +180,11 @@ void initialize() {
     // must read map before any distance sensor gets used
 
     auto start_time = pros::millis();
-    map_reader.read_compressed("/usd/field.map.compressed");
+    map_reader.read_compressed("/usd/field_720_100_100.map.compressed");
 
 	if(!map_reader.mapAvailable()){
 		std::cout << "try to read uncompressed map" << std::endl;;
-		map_reader.read("/usd/field.map");
+		map_reader.read("/usd/field_720_100_100.map");
 	}
 
     auto end_time = pros::millis();

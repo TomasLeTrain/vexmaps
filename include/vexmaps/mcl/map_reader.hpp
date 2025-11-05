@@ -1,12 +1,15 @@
 #pragma once
 
+#include "pros/rtos.hpp"
 #include "units/Angle.hpp"
 #include "units/units.hpp"
 #include <memory>
 
-template<int theta_res = 721, int x_res = 141, int y_res = 141>
+template<int theta_res = 721, int x_res = 101, int y_res = 101>
 class MapReader {
   private:
+    pros::Mutex m_mutex;
+
     std::unique_ptr<unsigned char[][x_res][y_res]> map;
 
     bool map_is_read;
