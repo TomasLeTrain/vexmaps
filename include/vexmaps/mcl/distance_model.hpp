@@ -121,11 +121,13 @@ class DistanceSensorModel : public Sensor {
         // one vertical and one horizontal
         // since the walls we check are always the same for both we can cache
         // the x/y value of the wall for each axis
-        Length horizontal_wall_length = wall_length * cos_sign;
-        Length vertical_wall_length = wall_length * sin_sign;
+        Length original_horizontal_wall_length = wall_length * cos_sign;
+        Length original_vertical_wall_length = wall_length * sin_sign;
 
-        horizontal_wall_length -= rotated_offsets.x;
-        vertical_wall_length -= rotated_offsets.y;
+        horizontal_wall_length =
+          original_horizontal_wall_length - rotated_offsets.x;
+        vertical_wall_length =
+          original_vertical_wall_length - rotated_offsets.y;
 
         hor_wall_coeff = horizontal_wall_length * secant - measured_distance;
         ver_wall_coeff = vertical_wall_length * cosecant - measured_distance;
@@ -373,6 +375,18 @@ class DistanceSensorModel : public Sensor {
         if (exit) {
             return std::nullopt;
         }
+
+        // std::cout << std::format("offset is {}, {}, {}. hor/ver wall is {},{}, "
+        //                          "measured is {}, fcos/sin {},{}",
+        //                          rotated_offsets.x.convert(in),
+        //                          rotated_offsets.y.convert(in),
+        //                          rotated_offsets.orientation.convert(deg),
+        //                          horizontal_wall_length.convert(in),
+        //                          vertical_wall_length.convert(in),
+        //                          measured_distance.convert(in),
+        //                          fcosa,
+        //                          fsina)
+        //           << std::endl;
 
         return units::V2Position {
             horizontal_wall_length - measured_distance * fcosa,

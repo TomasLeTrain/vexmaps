@@ -61,7 +61,7 @@ void MapReader<theta_res, x_res, y_res>::read_compressed(std::string filename) {
 
     // ensure vector is not stored on the stack
     std::unique_ptr<std::vector<char>> compressed_data =
-      std::make_unique<std::vector<char>>(std::vector<char>(file_size));
+      std::make_unique<std::vector<char>>(file_size);
 
     map_stream.seekg(0);
 
