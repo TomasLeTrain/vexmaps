@@ -13,25 +13,25 @@ class BlazingWrapper {
     BlazingWrapper(LocalizationModel* model)
         : model(model) {}
 
-	units::V2Position getPosition() {
-		return model->getPose();
-	}
+    units::V2Position getPosition() {
+        return model->getPose();
+    }
+
     Angle getAngle() {
-		return model->getPose().orientation;
-	}
+        return model->getPose().orientation;
+    }
 
+    Length getForwardTravel() {
+        return model->getForwardTravel();
+    }
 
-	Length getForwardTravel(){
-		return model->getForwardTravel();
-	}
+    LinearVelocity getLinearVelocity() {
+        return model->getLocalPoseDelta().x / model->getTaskDeltaTime();
+    }
 
-	LinearVelocity getLinearVelocity() {
-		return model->getLocalPoseDelta().x / model->getTaskDeltaTime();
-	}
-
-	AngularVelocity getAngularVelocity() {
-		return model->getAngularVelocity();
-	}
+    AngularVelocity getAngularVelocity() {
+        return model->getAngularVelocity();
+    }
 };
 
 } // namespace vexmaps

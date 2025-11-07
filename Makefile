@@ -24,7 +24,7 @@ MAKEFLAGS=-j
 USE_PACKAGE:=1
 
 # Add libraries you do not wish to include in the cold image here
-EXCLUDE_COLD_LIBRARIES:=$(FWDIR)/float_units.a $(FWDIR)/vexmath.a $(FWDIR)/lz4.a
+EXCLUDE_COLD_LIBRARIES:=$(FWDIR)/float_units.a $(FWDIR)/vexmath.a $(FWDIR)/zlib.a
 
 # Set this to 1 to add additional rules to compile your project as a PROS library template
 IS_LIBRARY:=1
@@ -32,7 +32,7 @@ IS_LIBRARY:=1
 # Be sure that your header files are in the include directory inside of a folder with the
 # same name as what you set LIBNAME to below.
 LIBNAME:=vexmaps
-VERSION:=0.0.9
+VERSION:=0.0.10
 # EXCLUDE_SRC_FROM_LIB= $(SRCDIR)/unpublishedfile.c
 # this line excludes opcontrol.c and similar files
 EXCLUDE_SRC_FROM_LIB+=$(foreach file, $(SRCDIR)/main,$(foreach cext,$(CEXTS),$(file).$(cext)) $(foreach cxxext,$(CXXEXTS),$(file).$(cxxext)))
