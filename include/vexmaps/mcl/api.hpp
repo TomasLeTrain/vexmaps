@@ -6,3 +6,6 @@
 #include "config.hpp"
 #include "utils.hpp"
 #include "sensor.hpp"
+
+#include "asm_functions.hpp"
+#include "map_reader.hpp"

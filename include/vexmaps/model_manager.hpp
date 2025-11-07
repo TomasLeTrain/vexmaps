@@ -71,7 +71,7 @@ class ModelManager : public LocalizationModel {
     // initialize all models
     void init() override {
         for (ManagedModel model : models) {
-			if(model.model == nullptr) continue;
+            if (model.model == nullptr) continue;
             model.model->init();
             pros::delay(init_timeout);
         }
@@ -172,6 +172,18 @@ class ModelManager : public LocalizationModel {
     Time getLatestUpdateTimestamp() override {
         assert(active_model != nullptr);
         return active_model->getLatestUpdateTimestamp();
+    }
+
+    // returns a signed distance traveled from the start of tracking
+    Length getForwardTravel() override {
+        assert(active_model != nullptr);
+        return active_model->getForwardTravel();
+    }
+
+    // returns the latest angular velocity
+    AngularVelocity getAngularVelocity() override {
+        assert(active_model != nullptr);
+        return active_model->getAngularVelocity();
     }
 };
 } // namespace vexmaps

@@ -46,6 +46,8 @@ class SmootherModel : public LocalizationModel {
     Time last_local_delta_timestamp = 0_msec;
     Time last_pose_timestamp = 0_msec;
 
+    Length forward_travel = 0_m;
+
     // relatively quick so that we can get the latest updates as fast as
     // possible
     Time task_delta_time = 8_msec;
@@ -86,8 +88,6 @@ class SmootherModel : public LocalizationModel {
         bool applied_local = false;
         bool applied_global = false;
 
-        // update steps get performed independently
-
         // only use if we have a new delta measurement
         if (current_local_delta_timestamp != last_local_delta_timestamp) {
 
@@ -115,7 +115,7 @@ class SmootherModel : public LocalizationModel {
         // only correct pose if we have a new pose measurement
         if (current_pose_timestamp != last_pose_timestamp &&
             // only use if it measures the global directly
-            pose_model->getConfidence()) {
+            pose_model->getConfidence().has_value()) {
             units::Pose pose_measurement = pose_model->getPose();
 
             units::V2Position difference = pose_measurement - pose_estimate;
@@ -133,10 +133,9 @@ class SmootherModel : public LocalizationModel {
             applied_global = true;
         }
 
-        global_pose_delta = units::Pose(pose_estimate.x - last_pose_estimate.x,
-                                        pose_estimate.y - last_pose_estimate.y,
-                                        pose_estimate.orientation -
-                                          last_pose_estimate.orientation);
+        global_pose_delta = { pose_estimate - last_pose_estimate,
+                              pose_estimate.orientation -
+                                last_pose_estimate.orientation };
 
         distance_traveled += global_pose_delta.magnitude();
 
@@ -148,6 +147,9 @@ class SmootherModel : public LocalizationModel {
         }
 
         local_pose_delta = localToGlobalDelta(global_pose_delta, avg_angle);
+
+		// add forward travel from local delta
+        forward_travel += local_pose_delta.x;
     }
 
     void setPose(units::Pose new_pose) override {
@@ -203,6 +205,17 @@ class SmootherModel : public LocalizationModel {
     void changeConfiguration(SmootherConfig new_config) {
         std::lock_guard lock(m_mutex);
         config = new_config;
+    }
+
+    // returns a signed distance traveled from the start of tracking
+    Length getForwardTravel() override {
+        return forward_travel;
+    }
+
+    // returns the latest angular velocity
+    AngularVelocity getAngularVelocity() override {
+        // just uses angular velocity from local delta model
+        return local_delta_model->getAngularVelocity();
     }
 
     ~SmootherModel() override = default;

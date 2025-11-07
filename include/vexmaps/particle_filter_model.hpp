@@ -1,5 +1,6 @@
 #pragma once
 
+#include "units/Angle.hpp"
 #include "vexmaps/localization_model.hpp"
 #include "vexmaps/mcl/config.hpp"
 #include "vexmaps/mcl/particle_filter.hpp"
@@ -23,6 +24,9 @@ class ParticleFilterModel : public LocalizationModel {
     units::Pose global_delta;
     units::Pose local_delta;
 
+    Length forward_travel = 0_m;
+    AngularVelocity angular_velocity;
+
   protected:
     mutable pros::Mutex m_mutex;
 
@@ -41,15 +45,20 @@ class ParticleFilterModel : public LocalizationModel {
         std::lock_guard lock(m_mutex);
         particle_filter.update();
 
-        units::Pose curr_pose = particle_filter.getPose();
+        const units::Pose curr_pose = particle_filter.getPose();
 
         global_delta =
           units::Pose(curr_pose - last_pose,
                       curr_pose.orientation - last_pose.orientation);
 
-        Angle avg_angle = (curr_pose.orientation + last_pose.orientation) / 2.0;
+        const Angle avg_angle =
+          (curr_pose.orientation + last_pose.orientation) / 2.0;
 
         local_delta = globalToLocalDelta(global_delta, avg_angle);
+
+        // add forward travel from local delta
+        forward_travel += local_delta.x;
+        angular_velocity = global_delta.orientation / getTaskDeltaTime();
 
         latest_update_time = from_msec(pros::millis());
 
@@ -74,7 +83,7 @@ class ParticleFilterModel : public LocalizationModel {
         set_pose_normal_deviation = new_stdev;
     }
 
-    // getters 
+    // getters
     Time getTaskDeltaTime() override {
         return taskDeltaTime;
     }
@@ -116,13 +125,29 @@ class ParticleFilterModel : public LocalizationModel {
         return local_delta;
     }
 
-    void setDisabled(bool new_state){
+    /**
+     * @brief Disables the particle filter from applying filtering
+     */
+    void setDisabled(bool new_state) {
         std::lock_guard lock(m_mutex);
         particle_filter.setDisabled(new_state);
     }
 
-    bool getDisabled(){
+    /**
+     * @brief Returns the disabled state of the particle filter
+     */
+    bool getDisabled() {
         return particle_filter.getDisabled();
+    }
+
+    // returns a signed distance traveled from the start of tracking
+    Length getForwardTravel() override {
+        return forward_travel;
+    }
+
+    // returns the latest angular velocity
+    AngularVelocity getAngularVelocity() override {
+        return angular_velocity;
     }
 
     ~ParticleFilterModel() override = default;

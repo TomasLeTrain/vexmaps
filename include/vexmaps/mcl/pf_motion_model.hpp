@@ -93,7 +93,8 @@ class PfMotionModel : public BasePfMotionModel {
     // used to compute the delta time between motion updates
     Time last_precomputed_time = infinity() * sec;
 
-    units::Pose accumulated_global_delta = units::Pose(), global_pose_delta;
+    units::Pose accumulated_global_delta = units::Pose();
+    units::Pose global_pose_delta;
 
   protected:
     mutable pros::Mutex m_mutex;
@@ -148,6 +149,16 @@ class PfMotionModel : public BasePfMotionModel {
         return base_motion_model.getTaskDeltaTime();
     }
 
+    // returns a signed distance traveled from the start of tracking
+    Length getForwardTravel() override {
+        return base_motion_model.getForwardTravel();
+    }
+
+    // returns the latest angular velocity
+    AngularVelocity getAngularVelocity() override {
+        return base_motion_model.getAngularVelocity();
+    }
+
     Time getLatestUpdateTimestamp() override {
         return update_timestamp;
     }
@@ -166,7 +177,7 @@ class PfMotionModel : public BasePfMotionModel {
           base_motion_model.getGlobalPoseDelta().orientation;
 
         // update timestamps
-        update_timestamp = from_msec(static_cast<double>(pros::millis()));
+        update_timestamp = from_msec(pros::millis());
     }
 
     units::FPose precompute() override {

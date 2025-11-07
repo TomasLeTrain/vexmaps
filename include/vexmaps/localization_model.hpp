@@ -55,6 +55,12 @@ class LocalizationModel {
 
     virtual Time getLatestUpdateTimestamp() = 0;
 
+    // returns a signed distance traveled from the start of tracking
+    virtual Length getForwardTravel() = 0;
+
+    // returns the latest angular velocity
+    virtual AngularVelocity getAngularVelocity() = 0;
+
     virtual ~LocalizationModel() = default;
 };
 

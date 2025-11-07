@@ -40,6 +40,9 @@ class OdometryModel : public LocalizationModel {
     Time delta_time = 10_msec;
     Time latest_update_time = 0_sec;
 
+    Length forward_travel = 0_m;
+    AngularVelocity angular_velocity;
+
     bool use_drivetrain = false;
 
   protected:
@@ -217,18 +220,18 @@ class OdometryModel : public LocalizationModel {
         // Update global position using polar coordinates
         Angle avg_angle = (pose.orientation + last_pose.orientation) / 2.0;
 
-        double sina = units::sin(avg_angle);
-        double cosa = units::cos(avg_angle);
-
-        global_delta.x = local_delta.x * cosa - local_delta.y * sina;
-        global_delta.y = local_delta.x * sina + local_delta.y * cosa;
+        global_delta = localToGlobalDelta(local_delta, avg_angle);
 
         last_pose = pose;
 
-        // only changes x/y, not orientation
+        // only changes x/y, not orientation (it was already updated)
         pose += global_delta;
 
         distance_traveled += global_delta.magnitude();
+
+        forward_travel += local_delta.x;
+        // uses imu measurement directly
+        angular_velocity = (-imu->get_gyro_rate().z) * degps;
 
         // update last- variables
         last_imu_angle = current_imu_angle;
@@ -297,6 +300,16 @@ class OdometryModel : public LocalizationModel {
 
     Time getLatestUpdateTimestamp() override {
         return latest_update_time;
+    }
+
+    // returns a signed distance traveled from the start of tracking
+    Length getForwardTravel() override {
+        return forward_travel;
+    }
+
+    // returns the latest angular velocity
+    AngularVelocity getAngularVelocity() override {
+        return angular_velocity;
     }
 
     ~OdometryModel() override = default;
