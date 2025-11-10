@@ -14,7 +14,7 @@ class MapReader {
 
     bool map_is_read;
 
-    // works for (x, y) alredy in inches and theta in 2 * degrees
+    // works for (x, y, theta) scaled with the appropriate factors
     float query_internal(float x, float y, float theta);
 
   public:

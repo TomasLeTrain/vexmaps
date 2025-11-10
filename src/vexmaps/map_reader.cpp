@@ -125,46 +125,42 @@ float MapReader<theta_res, x_res, y_res>::query_internal(float x,
     // std::endl;
 
     constexpr float theta_factor = (theta_res - 1) / 360.0;
-    // pi in deg
-    constexpr float M_PI_deg = (rot / 2).convert(deg);
+    constexpr float M_PI_scaled = 180 * theta_factor;
 
     bool x_sgn = x < 0;
     bool y_sgn = y < 0;
 
-    // theta is doubled, so constants have to as well
     if (x_sgn && y_sgn) {
-        theta = theta - theta_factor * M_PI_deg;
+        theta = theta - M_PI_scaled;
     } else if (x_sgn) {
-        theta = theta_factor * M_PI_deg - theta;
+        theta = M_PI_scaled - theta;
     } else if (y_sgn) {
-        theta = 2 * theta_factor * M_PI_deg - theta;
+        theta = 2 * M_PI_scaled - theta;
     }
 
-    // std::cout << "theta before " << theta << std::endl;
-    if (theta < 0) theta += 2 * theta_factor * M_PI_deg;
-    // std::cout << "theta after " << theta << std::endl;
+    if (theta < 0) theta += 2 * M_PI_scaled;
 
     int ix = std::round(std::abs(x));
     int iy = std::round(std::abs(y));
     int itheta = std::round(theta);
 
-    // if (ix >= x_res) {
-    //     std::cerr << "x out of range! -> " << ix << "," << iy << "," <<
-    //     itheta
-    //               << std::endl;
-    //     return (-2.5_Fm).internal();
-    // }
-    // if (iy >= y_res) {
-    //     std::cerr << "y out of range! -> " << ix << "," << iy << "," <<
-    //     itheta
-    //               << std::endl;
-    //     return (-2.5_Fm).internal();
-    // }
-    // if (itheta >= theta_res) {
-    //     std::cerr << "theta out of range! ->" << ix << "," << iy << ","
-    //               << itheta << std::endl;
-    //     return (-2.5_Fm).internal();
-    // }
+    if (ix >= x_res) {
+        std::cerr << "x out of range! -> " << ix << "," << iy << "," <<
+        itheta
+                  << std::endl;
+        return (-2.5_Fm).internal();
+    }
+    if (iy >= y_res) {
+        std::cerr << "y out of range! -> " << ix << "," << iy << "," <<
+        itheta
+                  << std::endl;
+        return (-2.5_Fm).internal();
+    }
+    if (itheta >= theta_res) {
+        std::cerr << "theta out of range! ->" << ix << "," << iy << ","
+                  << itheta << std::endl;
+        return (-2.5_Fm).internal();
+    }
 
     // std::cout << "query at " << ix << " " << iy << " " << itheta <<
     // std::endl;
