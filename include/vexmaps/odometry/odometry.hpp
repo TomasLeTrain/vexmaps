@@ -230,6 +230,7 @@ class OdometryModel : public LocalizationModel {
         distance_traveled += global_delta.magnitude();
 
         forward_travel += local_delta.x;
+
         // uses imu measurement directly
         angular_velocity = (-imu->get_gyro_rate().z) * degps;
 

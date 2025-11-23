@@ -145,21 +145,19 @@ float MapReader<theta_res, x_res, y_res>::query_internal(float x,
     int itheta = std::round(theta);
 
     if (ix >= x_res) {
-        std::cerr << "x out of range! -> " << ix << "," << iy << "," <<
-        itheta
+        std::cerr << "x out of range! -> " << ix << "," << iy << "," << itheta
                   << std::endl;
-        return (-2.5_Fm).internal();
+        return (-max_read_length).internal();
     }
     if (iy >= y_res) {
-        std::cerr << "y out of range! -> " << ix << "," << iy << "," <<
-        itheta
+        std::cerr << "y out of range! -> " << ix << "," << iy << "," << itheta
                   << std::endl;
-        return (-2.5_Fm).internal();
+        return (-max_read_length).internal();
     }
     if (itheta >= theta_res) {
         std::cerr << "theta out of range! ->" << ix << "," << iy << ","
                   << itheta << std::endl;
-        return (-2.5_Fm).internal();
+        return (-max_read_length).internal();
     }
 
     // std::cout << "query at " << ix << " " << iy << " " << itheta <<
@@ -167,12 +165,12 @@ float MapReader<theta_res, x_res, y_res>::query_internal(float x,
 
     unsigned char query = map[itheta][ix][iy];
 
-    constexpr float query_factor = (2.5_m / 254.0).internal();
+    constexpr float query_factor = (max_read_length / 254.0).internal();
 
     float query_distance = query_factor * static_cast<float>(query);
 
-    // what should we do?
-    if (query == 255) query_distance = (-2.5_Fm).internal();
+    // return big negative distance
+    if (query == 255) query_distance = (-max_read_length).internal();
 
     return query_distance;
 }
