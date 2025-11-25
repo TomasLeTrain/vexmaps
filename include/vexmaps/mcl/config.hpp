@@ -15,6 +15,7 @@ concept ValidDistanceConfig = requires {
     { Config::randomCoeff }   -> std::convertible_to<double>;
     { Config::expCoeff }      -> std::convertible_to<double>;
     { Config::normalCoeff }   -> std::convertible_to<double>;
+    { Config::maxDistanceDifference } -> std::convertible_to<FLength>;
     { Config::mapCoeff }   -> std::convertible_to<double>;
     { Config::logging } -> std::convertible_to<bool>;
     // clang-format on
@@ -28,6 +29,7 @@ struct PFConfiguration {
 
     bool logging = false;
     bool particle_logging = false;
+    bool custom_particle_logging = false;
 
     // threshold for sum of weights before normalization which determines if the
     // iteration is lost this should be tuned so iterations which are clearly
@@ -43,8 +45,9 @@ struct PFConfiguration {
     // percentage of particles which have weights near zero to resample
     float near_zero_particle_percentage = 0.75;
 
-    // percentage of the max weight at which a particle is included for the prediction
-    // the lower the number the less accurate prediction will be but it might be smoother
+    // percentage of the max weight at which a particle is included for the
+    // prediction the lower the number the less accurate prediction will be but
+    // it might be smoother
     float weightPredictionFactor = 0.8;
 
     // should be at most half the width of the robot

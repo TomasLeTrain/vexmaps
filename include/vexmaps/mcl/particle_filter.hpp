@@ -33,6 +33,9 @@ class ParticleFilter {
     alignas(16) std::array<float, max_size> tmp_list1;
     alignas(16) std::array<float, max_size> tmp_list2;
 
+    std::vector<std::pair<units::V2FPosition, float>> custom_particles;
+    units::FPose custom_prediction;
+
     BasePfMotionModel* motion_model;
     PFConfiguration PFConfig;
     std::vector<Sensor*> sensors;
@@ -40,8 +43,10 @@ class ParticleFilter {
     // global pose delta from the base motion model
     units::FPose globalPoseDelta;
 
-    std::uniform_real_distribution<float> field_dist { -wall_length.internal(),
-                                                       wall_length.internal() };
+    // std::uniform_real_distribution<float> field_dist {
+    // -global_hor_wall_length.internal(),
+    //                                                    global_hor_wall_length.internal()
+    //                                                    };
 
     uint64_t start_time;
 
@@ -72,6 +77,8 @@ class ParticleFilter {
     // maximum weight of normalized particles
     float max_unnormalized_weight = 0;
     float max_weight = 0;
+
+    LocalizationModel* reference_model = nullptr;
 
     // holds if none of the sensors detect values
     // useful for determining how to handle weights when there is no current
@@ -134,9 +141,19 @@ class ParticleFilter {
     }
 
     void updateSensors() {
+        // uses an approximate position using global delta
+        units::FPose approximate_pos = { getPose().x + globalPoseDelta.x,
+                                         getPose().y + globalPoseDelta.y,
+                                         current_angle };
+
+        // use reference model if possible
+        if (reference_model != nullptr) {
+            approximate_pos = reference_model->getPose();
+        }
+
         // perform the one time updates on the sensors
         for (Sensor* sensor : sensors) {
-            sensor->update(current_angle);
+            sensor->update(current_angle, approximate_pos);
         }
     }
 
@@ -316,16 +333,24 @@ class ParticleFilter {
             printf("total weight: %f, time taken: %lld, timestamp: ",
                    total_weight,
                    pros::micros() - start_time);
-            printf("%ud\n", pros::millis());
+            printf("%u\n", pros::millis());
             printf("things done:%d,%d,%d,%d\n",
                    this->appliedMotionModel,
                    this->weightedParticles,
                    this->appliedResampling,
                    N);
-            printf("prediction:%f,%f,%f\n",
-                   this->prediction.x.convert(in),
-                   this->prediction.y.convert(in),
-                   this->prediction.orientation.convert(Fdeg));
+            if (PFConfig.custom_particle_logging) {
+                printf("prediction:%f,%f,%f\n",
+                       this->custom_prediction.x.convert(in),
+                       this->custom_prediction.y.convert(in),
+                       this->custom_prediction.orientation.convert(Fdeg));
+            } else {
+                printf("prediction:%f,%f,%f\n",
+                       this->prediction.x.convert(in),
+                       this->prediction.y.convert(in),
+                       this->prediction.orientation.convert(Fdeg));
+            }
+
             printf("end generation\n");
         }
     }
@@ -350,7 +375,8 @@ class ParticleFilter {
         : motion_model(motionModel),
           PFConfig(config),
           sensors(std::move(sensors)) {
-        bordered_wall_length = wall_length - (PFConfig.wall_border_width);
+        bordered_wall_length =
+          global_hor_wall_length - (PFConfig.wall_border_width);
     }
 
     void addSensor(Sensor* sensor) {
@@ -440,11 +466,20 @@ class ParticleFilter {
         if (PFConfig.logging) {
             printf("start particles\n");
             if (PFConfig.particle_logging) {
-                for (size_t i = 0; i < N; i++) {
-                    printf("%.1f %.1f %.1f\n",
-                           x[i].convert(in),
-                           y[i].convert(in),
-                           weights[i] * 100);
+                if (PFConfig.custom_particle_logging) {
+                    for (auto [pose, weight] : custom_particles) {
+                        printf("%.1f %.1f %.1f\n",
+                               pose.x.convert(in),
+                               pose.y.convert(in),
+                               weight * 100);
+                    }
+                } else {
+                    for (size_t i = 0; i < N; i++) {
+                        printf("%.1f %.1f %.1f\n",
+                               x[i].convert(in),
+                               y[i].convert(in),
+                               weights[i] * 100);
+                    }
                 }
             }
             printf("end particles\n");
@@ -536,10 +571,10 @@ class ParticleFilter {
             weights[i] = average_weight;
         }
 
-        initUniform(-wall_length,
-                    -wall_length,
-                    wall_length,
-                    wall_length,
+        initUniform(-global_hor_wall_length,
+                    -global_ver_wall_length,
+                    global_hor_wall_length,
+                    global_ver_wall_length,
                     0_FstDeg);
     }
 
@@ -554,6 +589,19 @@ class ParticleFilter {
 
     void setDisabled(bool new_state) {
         disabled = new_state;
+    }
+
+    void setCustomParticles(
+      std::vector<std::pair<units::V2FPosition, float>> newParticles) {
+        custom_particles = newParticles;
+    }
+
+    void setCustomPrediction(units::FPose pose) {
+        custom_prediction = pose;
+    }
+
+    void setReferenceModel(LocalizationModel* model) {
+        reference_model = model;
     }
 
     bool getDisabled() {

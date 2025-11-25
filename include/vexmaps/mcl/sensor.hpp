@@ -1,6 +1,7 @@
 #pragma once
 
 #include "units/Angle.hpp"
+#include "units/Pose.hpp"
 #include "units/Vector2D.hpp"
 #include <arm_neon.h>
 #include <cassert>
@@ -8,7 +9,7 @@
 namespace vexmaps {
 class Sensor {
   public:
-    virtual void update(Angle angle) = 0;
+    virtual void update(Angle angle, std::optional<units::FPose> pose) = 0;
     virtual std::optional<units::V2FPosition> getExpected() = 0;
     virtual bool hasAvailableReading() = 0;
 

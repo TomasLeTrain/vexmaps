@@ -23,6 +23,7 @@ class DistanceSensorModel : public Sensor {
 
     pros::Distance* distance_sensor;
     units::Pose offsets;
+    double m_distance_scale_factor;
     std::string name;
 
     // optional
@@ -71,28 +72,38 @@ class DistanceSensorModel : public Sensor {
 
   public:
     DistanceSensorModel(pros::Distance* distance_sensor,
-                        const units::Pose offset,
+                        units::Pose offset,
+                        double distance_scale_factor,
                         std::string name,
                         MapReader<>* map_reader = nullptr)
         : distance_sensor(std::move(distance_sensor)),
           offsets(offset),
+          m_distance_scale_factor(distance_scale_factor),
           name(name),
           map_reader(map_reader) {}
 
-    void update(Angle angle) override {
+    void update(Angle angle, std::optional<units::FPose> pose) override {
         // first check if the distance sensor is available, and if its not then
         // fail non-destructively while still alerting user
         if (distance_sensor == nullptr || !distance_sensor->is_installed()) {
             // not available, just set exit to true
             exit = true;
-            printf(
-              "ONE OF THE DISTANCE SENSORS ARE NOT CONNECTED CORRECTLY!!\n");
+            // printf(
+            //   "ONE OF THE DISTANCE SENSORS ARE NOT CONNECTED CORRECTLY!!\n");
             return;
         }
 
         const int32_t measured_mm = distance_sensor->get();
 
         measured_distance = from_mm(measured_mm);
+
+        // only applies scale factor if distance sensor uses alternate algo for
+        // determining distance (smaller than 200_mm probably does not need a
+        // scaling factor)
+        if (measured_distance > 200_mm) {
+            measured_distance *= m_distance_scale_factor;
+        }
+
         f_measured_distance = measured_distance.internal();
 
         // distance sensor doesn't measure anything
@@ -121,8 +132,10 @@ class DistanceSensorModel : public Sensor {
         // one vertical and one horizontal
         // since the walls we check are always the same for both we can cache
         // the x/y value of the wall for each axis
-        Length original_horizontal_wall_length = wall_length * cos_sign;
-        Length original_vertical_wall_length = wall_length * sin_sign;
+        Length original_horizontal_wall_length =
+          global_hor_wall_length * cos_sign;
+        Length original_vertical_wall_length =
+          global_ver_wall_length * sin_sign;
 
         horizontal_wall_length =
           original_horizontal_wall_length - rotated_offsets.x;
@@ -152,6 +165,18 @@ class DistanceSensorModel : public Sensor {
         // (only depends on measured distance)
         expFactor = expVal * DistanceSensorConfig::expCoeff + randomFactor;
 
+        if (pose) {
+            FLength pose_distance_difference =
+              getDistanceDifference(pose->x, pose->y);
+
+            // assumes pose is close enough to actual pose
+            if (units::sgn(pose_distance_difference) > 0.0 &&
+                units::abs(pose_distance_difference) >
+                  DistanceSensorConfig::maxDistanceDifference) {
+                exit = true;
+            }
+        }
+
         if (DistanceSensorConfig::logging) {
             // name:distance,confidence,std,exit,obj_size
             std::cout << name << ":" << measured_distance.convert(in) << ","
@@ -178,6 +203,14 @@ class DistanceSensorModel : public Sensor {
         } else {
             return normal_dist + randomFactor;
         }
+    }
+
+    // assumes that its only getting called if exit is false
+    // this assumption saves some conditionals improving performance
+    FLength getDistanceDifference(FLength x, FLength y) {
+        const FLength difference = units::min(hor_wall_coeff + x * x_coeff,
+                                              ver_wall_coeff + y * y_coeff);
+        return difference;
     }
 
     // assumes that its only getting called if exit is false
@@ -376,7 +409,8 @@ class DistanceSensorModel : public Sensor {
             return std::nullopt;
         }
 
-        // std::cout << std::format("offset is {}, {}, {}. hor/ver wall is {},{}, "
+        // std::cout << std::format("offset is {}, {}, {}. hor/ver wall is
+        // {},{}, "
         //                          "measured is {}, fcos/sin {},{}",
         //                          rotated_offsets.x.convert(in),
         //                          rotated_offsets.y.convert(in),
