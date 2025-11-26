@@ -17,14 +17,14 @@
 
 namespace vexmaps {
 
-template<class DistanceSensorConfig>
-    requires ValidDistanceConfig<DistanceSensorConfig>
 class DistanceSensorModel : public Sensor {
 
     pros::Distance* distance_sensor;
     units::Pose offsets;
     double m_distance_scale_factor;
     std::string name;
+
+    DistanceSensorConfig config;
 
     // optional
     MapReader<>* map_reader;
@@ -39,12 +39,10 @@ class DistanceSensorModel : public Sensor {
     // when false, sensor is not used regardless of measurements
     bool enabled = true;
 
-    // 2.5 meters is more than what the distance sensor will ever be able to
+    // 2.5 meters is likely the most a distance sensor will ever be able to
     // sense
-    static constexpr double randomUniformProbability = 1 / (2.54);
-
-    static constexpr double randomFactor =
-      DistanceSensorConfig::randomCoeff * randomUniformProbability;
+    const double randomUniformProbability = 1 / (2.54);
+    double randomFactor;
 
     // precomputed values
 
@@ -72,15 +70,19 @@ class DistanceSensorModel : public Sensor {
 
   public:
     DistanceSensorModel(pros::Distance* distance_sensor,
-                        units::Pose offset,
+                        units::Pose offsets,
                         double distance_scale_factor,
                         std::string name,
+                        DistanceSensorConfig config,
                         MapReader<>* map_reader = nullptr)
-        : distance_sensor(std::move(distance_sensor)),
-          offsets(offset),
+        : distance_sensor(distance_sensor),
+          offsets(offsets),
           m_distance_scale_factor(distance_scale_factor),
           name(name),
-          map_reader(map_reader) {}
+          config(config),
+          map_reader(map_reader) {
+        randomFactor = config.randomCoeff * randomUniformProbability;
+    }
 
     void update(Angle angle, std::optional<units::FPose> pose) override {
         // first check if the distance sensor is available, and if its not then
@@ -151,8 +153,8 @@ class DistanceSensorModel : public Sensor {
         x_coeff = -secant;
         y_coeff = -cosecant;
 
-        float expVal = expDistribution<DistanceSensorConfig::exp_l>(
-          measured_distance.internal());
+        float expVal =
+          expDistribution(measured_distance.internal(), config.exp_l);
 
         // should actually be applied per particle but would be really
         // computationally expensive
@@ -163,7 +165,7 @@ class DistanceSensorModel : public Sensor {
 
         // constant in relation to all particles
         // (only depends on measured distance)
-        expFactor = expVal * DistanceSensorConfig::expCoeff + randomFactor;
+        expFactor = expVal * config.expCoeff + randomFactor;
 
         if (pose) {
             FLength pose_distance_difference =
@@ -172,16 +174,25 @@ class DistanceSensorModel : public Sensor {
             // assumes pose is close enough to actual pose
             if (units::sgn(pose_distance_difference) > 0.0 &&
                 units::abs(pose_distance_difference) >
-                  DistanceSensorConfig::maxDistanceDifference) {
+                  config.maxDistanceDifference) {
+                exit = true;
+            } else if
+              // technically should never be a wrong measurement, however at
+              // weird angles a measurement might be greater than it actually
+              // should be. we can ignore measurements like these
+              (units::sgn(pose_distance_difference) < 0.0 &&
+               units::abs(pose_distance_difference) >
+                 // TODO: change 1.5 to be tunable
+                 1.5 * config.maxDistanceDifference) {
                 exit = true;
             }
         }
 
-        if (DistanceSensorConfig::logging) {
+        if (config.logging) {
             // name:distance,confidence,std,exit,obj_size
             std::cout << name << ":" << measured_distance.convert(in) << ","
                       << distance_sensor->get_confidence() << ","
-                      << DistanceSensorConfig::std_deviation << ","
+                      << config.std_deviation << ","
                       << (exit ? "true" : "false") << ","
                       << distance_sensor->get_object_size() << "\n";
         }
@@ -194,9 +205,9 @@ class DistanceSensorModel : public Sensor {
                                               ver_wall_coeff + y * y_coeff);
 
         float normal_dist =
-          NormalDistributionApproximation<DistanceSensorConfig::std_deviation,
-                                          DistanceSensorConfig::normalCoeff>(
-            difference.internal());
+          NormalDistributionApproximation(difference.internal(),
+                                          config.std_deviation,
+                                          config.normalCoeff);
 
         if (difference.internal() >= 0) {
             return normal_dist + expFactor;
@@ -215,58 +226,65 @@ class DistanceSensorModel : public Sensor {
 
     // assumes that its only getting called if exit is false
     // this assumption saves some conditionals improving performance
-    float32x4_t Vevaluate(float32x4_t x, float32x4_t y) override {
-        // clang-format off
-        //
-        // expected_distance =
-        //   min( (horizontal_wall_length - point.x) * secant,
-        //        (vertical_wall_length   - point.y) * cosecant );
-        //
-        // hor_wall = (horizontal_wall_length - x) * this->secant
-        // hor_wall = (horizontal_wall_length * this->secant) + x * (-this->secant)
-        // hor_wall = HC [all precomputed]                    + x * x_coeff [precomputed] 
-        //
-        // -- direct difference formulation --
-        // difference = expected_distance - measured_distance
-        // difference = min(HC,VC) - measured_distance  ==>  min(HC - measured_distance, VC - measured_distance)
-        //
-        // HC                            - measured_distance
-        // (hor_wall_coeff - x * secant) - measured_distance
-        // (hor_wall_coeff - measured_distance) + x * x_coeff
-        // hor_wall_coeff [new coeff]           + x * x_coeff
-        //
-        //
-        // in the end this results in:
-        // hor_wall_coeff = horizontal_wall_length * secant   - measured_distance
-        // ver_wall_coeff = vertical_wall_length   * cosecant - measured_distance
-        // x_coeff = -secant
-        // y_coeff = -cosecant
-        //
-        // clang-format on
-
-        // HC = hor_wall_coeff + point.x * (-secant)
-        // VC = ver_wall_coeff + point.y * (-cosecant)
-        float32x4_t HC = vmlaq_n_f32(vdupq_n_f32(Vhor_wall_coeff), x, x_coeff);
-        float32x4_t VC = vmlaq_n_f32(vdupq_n_f32(Vver_wall_coeff), y, y_coeff);
-
-        // difference = min(HC,VC)
-        float32x4_t difference = vminq_f32(HC, VC);
-
-        // each number is all UINT_MAX if (expected - measured) is >= 0, else
-        // its 0
-        uint32x4_t modMask = vcgeq_f32(difference, vdupq_n_f32(0.0));
-
-        // constantFactor = measured <= expected ? expFactor : randomFactor
-        float32x4_t VMaskedConstantFactor =
-          vbslq_f32(modMask, vdupq_n_f32(expFactor), vdupq_n_f32(randomFactor));
-
-        float32x4_t normal_dist =
-          VNormalDistributionApproximation<DistanceSensorConfig::std_deviation,
-                                           DistanceSensorConfig::normalCoeff>(
-            difference);
-
-        return vaddq_f32(normal_dist, VMaskedConstantFactor);
-    }
+    // float32x4_t Vevaluate(float32x4_t x, float32x4_t y) override {
+    //     // clang-format off
+    //     //
+    //     // expected_distance =
+    //     //   min( (horizontal_wall_length - point.x) * secant,
+    //     //        (vertical_wall_length   - point.y) * cosecant );
+    //     //
+    //     // hor_wall = (horizontal_wall_length - x) * this->secant
+    //     // hor_wall = (horizontal_wall_length * this->secant) + x *
+    //     (-this->secant)
+    //     // hor_wall = HC [all precomputed]                    + x * x_coeff
+    //     [precomputed]
+    //     //
+    //     // -- direct difference formulation --
+    //     // difference = expected_distance - measured_distance
+    //     // difference = min(HC,VC) - measured_distance  ==>  min(HC -
+    //     measured_distance, VC - measured_distance)
+    //     //
+    //     // HC                            - measured_distance
+    //     // (hor_wall_coeff - x * secant) - measured_distance
+    //     // (hor_wall_coeff - measured_distance) + x * x_coeff
+    //     // hor_wall_coeff [new coeff]           + x * x_coeff
+    //     //
+    //     //
+    //     // in the end this results in:
+    //     // hor_wall_coeff = horizontal_wall_length * secant   -
+    //     measured_distance
+    //     // ver_wall_coeff = vertical_wall_length   * cosecant -
+    //     measured_distance
+    //     // x_coeff = -secant
+    //     // y_coeff = -cosecant
+    //     //
+    //     // clang-format on
+    //
+    //     // HC = hor_wall_coeff + point.x * (-secant)
+    //     // VC = ver_wall_coeff + point.y * (-cosecant)
+    //     float32x4_t HC = vmlaq_n_f32(vdupq_n_f32(Vhor_wall_coeff), x,
+    //     x_coeff); float32x4_t VC = vmlaq_n_f32(vdupq_n_f32(Vver_wall_coeff),
+    //     y, y_coeff);
+    //
+    //     // difference = min(HC,VC)
+    //     float32x4_t difference = vminq_f32(HC, VC);
+    //
+    //     // each number is all UINT_MAX if (expected - measured) is >= 0, else
+    //     // its 0
+    //     uint32x4_t modMask = vcgeq_f32(difference, vdupq_n_f32(0.0));
+    //
+    //     // constantFactor = measured <= expected ? expFactor : randomFactor
+    //     float32x4_t VMaskedConstantFactor =
+    //       vbslq_f32(modMask, vdupq_n_f32(expFactor),
+    //       vdupq_n_f32(randomFactor));
+    //
+    //     float32x4_t normal_dist =
+    //       VNormalDistributionApproximation<DistanceSensorConfig::std_deviation,
+    //                                        DistanceSensorConfig::normalCoeff>(
+    //         difference);
+    //
+    //     return vaddq_f32(normal_dist, VMaskedConstantFactor);
+    // }
 
     void evaluate_wall_array(float* curr_weights,
                              float* x,
@@ -330,8 +348,8 @@ class DistanceSensorModel : public Sensor {
           tmp_array,
           len,
           0, // difference already applied, mean is just zero
-          DistanceSensorConfig::std_deviation,
-          DistanceSensorConfig::normalCoeff);
+          config.std_deviation,
+          config.normalCoeff);
 
         // gets vectorized?
         for (int i = 0; i < len; i++) {
@@ -371,8 +389,8 @@ class DistanceSensorModel : public Sensor {
                                tmp_array,
                                len,
                                f_measured_distance,
-                               DistanceSensorConfig::map_deviation,
-                               DistanceSensorConfig::mapCoeff);
+                               config.map_deviation,
+                               config.mapCoeff);
     }
 
     void evaluate_array(float* curr_weights,
@@ -436,6 +454,10 @@ class DistanceSensorModel : public Sensor {
         enabled = true;
     }
 
+    void setConfig(DistanceSensorConfig new_config) {
+        config = new_config;
+    }
+
     bool getEnabled() override {
         return enabled;
     }
@@ -445,7 +467,8 @@ class DistanceSensorModel : public Sensor {
     }
 
     bool getVectorized() override {
-        return true;
+        // return true;
+        return false;
     }
 
     bool canProcessArray() override {

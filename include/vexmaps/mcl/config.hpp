@@ -5,22 +5,6 @@
 
 namespace vexmaps {
 
-// Distance Config concept
-template<typename Config>
-concept ValidDistanceConfig = requires {
-    // clang-format off
-    { Config::exp_l }         -> std::convertible_to<double>;
-    { Config::std_deviation } -> std::convertible_to<double>;
-    { Config::map_deviation } -> std::convertible_to<double>;
-    { Config::randomCoeff }   -> std::convertible_to<double>;
-    { Config::expCoeff }      -> std::convertible_to<double>;
-    { Config::normalCoeff }   -> std::convertible_to<double>;
-    { Config::maxDistanceDifference } -> std::convertible_to<FLength>;
-    { Config::mapCoeff }   -> std::convertible_to<double>;
-    { Config::logging } -> std::convertible_to<bool>;
-    // clang-format on
-};
-
 // default configs
 struct PFConfiguration {
     // using vectorized routines. set to off if using untested routines or stuff
@@ -102,17 +86,23 @@ struct MotionModelConfig {
     FTime process_time = 10_msec;
 };
 
-struct DistanceSensorConfiguration {
+struct DistanceSensorConfig {
     // all floats without units are in meters
-    static constexpr double exp_l = 1.5;
-    static constexpr double std_deviation = (2_in).internal();
+    float exp_l = 1.5;
+    float std_deviation = (2_in).internal();
+    float map_deviation = (3_in).internal();
 
-    // all these should add to one
-    static constexpr double randomCoeff = 0.15;
-    static constexpr double expCoeff = 0.1;
-    static constexpr double normalCoeff = 0.75;
+    // sum of coefficients 1
+    float randomCoeff = 0.0;
+    float expCoeff = 0.15;
+    float normalCoeff = 0.6;
+    float mapCoeff = 0.25;
 
-    static constexpr bool logging = false;
+    // static constexpr FLength maxDistanceDifference = 18_in;
+    FLength maxDistanceDifference = 3_in;
+
+    // static constexpr bool logging = false;
+    bool logging = true;
 };
 
 } // namespace vexmaps

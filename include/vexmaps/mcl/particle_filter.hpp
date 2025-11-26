@@ -43,11 +43,6 @@ class ParticleFilter {
     // global pose delta from the base motion model
     units::FPose globalPoseDelta;
 
-    // std::uniform_real_distribution<float> field_dist {
-    // -global_hor_wall_length.internal(),
-    //                                                    global_hor_wall_length.internal()
-    //                                                    };
-
     uint64_t start_time;
 
     units::FPose prediction;
@@ -148,7 +143,19 @@ class ParticleFilter {
 
         // use reference model if possible
         if (reference_model != nullptr) {
+            // TODO: does approximate_pos have global pose delta applied or not?
             approximate_pos = reference_model->getPose();
+
+            auto motion_model_timestamp =
+              motion_model->getLatestUpdateTimestamp();
+            auto reference_model_timestamp =
+              reference_model->getLatestUpdateTimestamp();
+
+            if (reference_model_timestamp < motion_model_timestamp) {
+                // motion model was updated after latest update from reference,
+                // meaning global delta has likely not been applied yet
+                approximate_pos += globalPoseDelta;
+            }
         }
 
         // perform the one time updates on the sensors
