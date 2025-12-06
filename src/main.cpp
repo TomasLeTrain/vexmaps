@@ -39,6 +39,8 @@ struct CustomDistanceSensorConfiguration {
     // static constexpr bool logging = false;
 };
 
+vexmaps::DistanceSensorConfig distance_sensor_config {};
+
 class FakeDistance : public pros::Distance {
   private:
     Length fixed_length = 0_m;
@@ -126,32 +128,38 @@ MapReader<> map_reader;
 
 FakeDistance fake_distance;
 
-vexmaps::DistanceSensorModel<CustomDistanceSensorConfiguration>
-  front_laser_model(&front_sensor,
-                    { 5.25_in, 5.4375_in, 0_stDeg },
-                    "front",
-                    &map_reader);
-vexmaps::DistanceSensorModel<CustomDistanceSensorConfiguration>
-  left_laser_model(&left_sensor,
-                   { 3_in, 5.25_in, 90_stDeg },
-                   "left",
-                   &map_reader);
-vexmaps::DistanceSensorModel<CustomDistanceSensorConfiguration>
-  back_laser_model(&back_sensor,
-                   { -4_in, -1.84375_in, 180_stDeg },
-                   "back",
-                   &map_reader);
-vexmaps::DistanceSensorModel<CustomDistanceSensorConfiguration>
+vexmaps::DistanceSensorModel front_laser_model(&front_sensor,
+                                               { 5.25_in, 5.4375_in, 0_stDeg },
+                                               1.0,
+                                               "front",
+                                               distance_sensor_config,
+                                               &map_reader);
+vexmaps::DistanceSensorModel left_laser_model(&left_sensor,
+                                              { 3_in, 5.25_in, 90_stDeg },
+                                              1.0,
+                                              "left",
+                                              distance_sensor_config,
+                                              &map_reader);
+vexmaps::DistanceSensorModel back_laser_model(&back_sensor,
+                                              { -4_in, -1.84375_in, 180_stDeg },
+                                              1.0,
+                                              "back",
+                                              distance_sensor_config,
+                                              &map_reader);
+vexmaps::DistanceSensorModel
   right_laser_model(&right_sensor,
                     { 4.25_in, -5.375_in, 270_stDeg },
+                    1.0,
                     "right",
+                    distance_sensor_config,
                     &map_reader);
 
-vexmaps::DistanceSensorModel<CustomDistanceSensorConfiguration>
-  fake_distance_model(&fake_distance,
-                      { 0_in, 0_in, 0_stDeg },
-                      "fake",
-                      &map_reader);
+vexmaps::DistanceSensorModel fake_distance_model(&fake_distance,
+                                                 { 0_in, 0_in, 0_stDeg },
+                                                 1.0,
+                                                 "fake",
+                                                 distance_sensor_config,
+                                                 &map_reader);
 
 vexmaps::ParticleFilterModel<particle_count> pf_model(&odom_model,
                                                       { &front_laser_model,
@@ -182,10 +190,11 @@ void initialize() {
     auto start_time = pros::millis();
     map_reader.read_compressed("/usd/field_720_100_100.map.compressed");
 
-	if(!map_reader.mapAvailable()){
-		std::cout << "try to read uncompressed map" << std::endl;;
-		map_reader.read("/usd/field_720_100_100.map");
-	}
+    if (!map_reader.mapAvailable()) {
+        std::cout << "try to read uncompressed map" << std::endl;
+        ;
+        map_reader.read("/usd/field_720_100_100.map");
+    }
 
     auto end_time = pros::millis();
     std::cout << "read map in " << end_time - start_time << " milliseconds."
@@ -242,7 +251,7 @@ void opcontrol() {
         }
 
         fake_distance.set_length(30_Fin);
-        fake_distance_model.update(60_FstDeg);
+        fake_distance_model.update(60_FstDeg, std::nullopt);
 
         v_x[0] = -20_in;
         v_y[0] = 20_in;
