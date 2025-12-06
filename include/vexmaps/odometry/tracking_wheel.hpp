@@ -117,26 +117,36 @@ class OdometryTracking : public TrackingWheel {
     // used
     bool available_changed = false;
 
+    bool m_print_on_error = false;
+
+    bool m_disabled = false;
+
   public:
     OdometryTracking(pros::Rotation* rotation_sensor,
                      FLength diameter,
                      double gear_ratio,
-                     FLength offset)
+                     FLength offset,
+                     bool disabled = false,
+                     bool print_on_error = false)
         : rotation_sensor(rotation_sensor),
           diameter(diameter),
           gear_ratio(gear_ratio),
-          offset(offset) {}
+          offset(offset),
+          m_disabled(disabled),
+          m_print_on_error(print_on_error) {}
 
     void init() override {
         if (rotation_sensor == nullptr) {
-            // done here so it only gets printed once once
-            printf(
-              "WARNING: ROTATION IS NULL - Check config for nullptr! - " "remov" "e " "from " "list " "of " "track" "ers " "if " "this " "track" "er " "is " "not " "used" "\n");
+            if (m_print_on_error)
+                // done here so it only gets printed once once
+                printf(
+                  "WARNING: ROTATION IS NULL - Check config for nullptr! - "
+                  "remove from list of trackers if this tracker is not used\n");
             available = false;
             return;
         }
         if (!rotation_sensor->is_installed()) {
-            printf("WARNING: ROTATION NOT CONNECTED!\n");
+            if (m_print_on_error) printf("WARNING: ROTATION NOT CONNECTED!\n");
             available = false;
             return;
         }
@@ -151,8 +161,10 @@ class OdometryTracking : public TrackingWheel {
         if (rotation_sensor == nullptr) {
             // doesn't print always to let user see other possible messsages
             if (available) {
-                printf(
-                  "WARNING: ROTATION IS NULL - Check config for nullptr! " "- " "remove from list of trackers if this tracker is " "not used\n");
+                if (m_print_on_error)
+                    printf("WARNING: ROTATION IS NULL - Check config for "
+                           "nullptr! - remove from list of trackers if this "
+                           "tracker is not used\n");
             }
             available = false;
             available_changed = false;
@@ -162,7 +174,8 @@ class OdometryTracking : public TrackingWheel {
         if (!rotation_sensor->is_installed()) {
             // doesn't print always to let user see other possible messsages
             if (available) {
-                printf("WARNING: ROTATION NOT CONNECTED!\n");
+                if (m_print_on_error)
+                    printf("WARNING: ROTATION NOT CONNECTED!\n");
             }
             available = false;
             available_changed = false;
@@ -215,11 +228,19 @@ class OdometryTracking : public TrackingWheel {
     }
 
     bool getAvailable() override {
-        return available && !available_changed;
+        return (!m_disabled) && available && !available_changed;
     }
 
     trackingOrientation getTrackingWheelType() override {
         return tracking_orientation;
+    }
+
+    bool getDisabled() {
+        return m_disabled;
+    }
+
+    void setDisabled(bool disabled) {
+        m_disabled = disabled;
     }
 
     ~OdometryTracking() override = default;

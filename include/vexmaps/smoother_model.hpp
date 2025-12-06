@@ -146,7 +146,7 @@ class SmootherModel : public LocalizationModel {
             last_local_estimate = pose_estimate;
         }
 
-        local_pose_delta = localToGlobalDelta(global_pose_delta, avg_angle);
+        local_pose_delta = globalToLocalDelta(global_pose_delta, avg_angle);
 
 		// add forward travel from local delta
         forward_travel += local_pose_delta.x;

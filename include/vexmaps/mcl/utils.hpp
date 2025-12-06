@@ -9,8 +9,13 @@
 
 namespace vexmaps {
 // definition of useful constants
-constexpr FLength global_hor_wall_length = (142.1_in) / 2.0;
-constexpr FLength global_ver_wall_length = (141.1_in) / 2.0;
+// our field
+// constexpr FLength global_hor_wall_length = (142.1_in) / 2.0;
+// constexpr FLength global_ver_wall_length = (141.1_in) / 2.0;
+
+// normal fields
+constexpr FLength global_hor_wall_length = (140.75_in) / 2.0;
+constexpr FLength global_ver_wall_length = (140.75_in) / 2.0;
 
 // rng used throughout the filter
 inline RobotEntropy<uint32_t> robot_rng;

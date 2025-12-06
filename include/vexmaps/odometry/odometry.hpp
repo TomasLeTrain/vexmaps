@@ -44,6 +44,7 @@ class OdometryModel : public LocalizationModel {
     AngularVelocity angular_velocity;
 
     bool use_drivetrain = false;
+    bool m_print_on_failure = false;
 
   protected:
     mutable pros::Mutex m_mutex;
@@ -55,13 +56,15 @@ class OdometryModel : public LocalizationModel {
       std::initializer_list<HorizontalOdometryTracker*> horizontal_trackers,
       std::initializer_list<VerticalOdometryTracker*> vertical_trackers,
       pros::Imu* imu,
-      bool use_drivetrain = false)
+      bool use_drivetrain = false,
+      bool print_on_failure = false)
         : left_tracker(left_tracker),
           right_tracker(right_tracker),
           horizontal_trackers(horizontal_trackers),
           vertical_trackers(vertical_trackers),
           imu(imu),
-          use_drivetrain(use_drivetrain) {}
+          use_drivetrain(use_drivetrain),
+          m_print_on_failure(print_on_failure) {}
 
     /**
      * @brief Should be called once to initialize the model
@@ -113,19 +116,22 @@ class OdometryModel : public LocalizationModel {
         Angle current_imu_angle = last_imu_angle;
 
         if (imu == nullptr) {
-            printf("WARNING: IMU IS NULL - Check config for a nullptr!\n");
+            if (m_print_on_failure)
+                printf("WARNING: IMU IS NULL - Check config for a nullptr!\n");
             current_imu_angle = last_imu_angle;
         } else if (!imu->is_installed()) {
-            printf(
-              "WARNING: IMU NOT DETECTED - Check cable connection or port!\n");
+            if (m_print_on_failure)
+                printf("WARNING: IMU NOT DETECTED - Check cable connection or "
+                       "port!\n");
             current_imu_angle = last_imu_angle;
         } else {
             // imu is installed
             if (std::isfinite(imu->get_rotation())) {
                 current_imu_angle = from_stDeg(imu->get_rotation());
             } else {
-                printf(
-                  "WARNING: IMU NOT FINITE - Might not be calibrated or " "did " "not " "cali" "brat" "e " "prop" "erly" "!" "\n");
+                if (m_print_on_failure)
+                    printf("WARNING: IMU NOT FINITE - Might not be calibrated "
+                           "or did not calibrate properly!\n");
                 current_imu_angle = last_imu_angle;
             }
         }
@@ -133,6 +139,7 @@ class OdometryModel : public LocalizationModel {
         // delta is in imu system
         Angle imu_angle_delta = current_imu_angle - last_imu_angle;
 
+        // reverts into standard degrees
         if (imu_angle_delta.internal() != 0) {
             angle_delta = -imu_angle_delta;
         } else {
@@ -193,8 +200,6 @@ class OdometryModel : public LocalizationModel {
                       sin_multiplier *
                       (tracker->getDeltaDistance() / angle_delta.internal() -
                        tracker->getOffset());
-                    // printf("\\left(%f,",tracker->getDeltaDistance() /
-                    // angle_delta);
                     x_tracker_count++;
                 }
             }
@@ -205,8 +210,6 @@ class OdometryModel : public LocalizationModel {
                       sin_multiplier *
                       (tracker->getDeltaDistance() / angle_delta.internal() -
                        tracker->getOffset());
-                    // printf("%f\\right),\n",tracker->getDeltaDistance() /
-                    // angle_delta);
                     y_tracker_count++;
                 }
             }
@@ -232,7 +235,7 @@ class OdometryModel : public LocalizationModel {
         forward_travel += local_delta.x;
 
         // uses imu measurement directly
-        angular_velocity = (-imu->get_gyro_rate().z) * degps;
+        angular_velocity = (imu->get_gyro_rate().z) * degps;
 
         // update last- variables
         last_imu_angle = current_imu_angle;

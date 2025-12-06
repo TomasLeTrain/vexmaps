@@ -25,6 +25,10 @@ class BlazingWrapper {
         return model->getForwardTravel();
     }
 
+    Length getDistanceTraveled() {
+        return model->getDistanceTraveled();
+    }
+
     LinearVelocity getLinearVelocity() {
         return model->getLocalPoseDelta().x / model->getTaskDeltaTime();
     }
