@@ -458,6 +458,18 @@ class DistanceSensorModel : public Sensor {
         config = new_config;
     }
 
+    DistanceSensorConfig getConfig() {
+        return config;
+    }
+
+    void setMaxDistanceDifference(FLength maxDistanceDifference) {
+        config.maxDistanceDifference = maxDistanceDifference;
+    }
+
+    FLength getMaxDistanceDifference() {
+        return config.maxDistanceDifference;
+    }
+
     bool getEnabled() override {
         return enabled;
     }

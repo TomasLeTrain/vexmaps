@@ -148,7 +148,7 @@ class SmootherModel : public LocalizationModel {
 
         local_pose_delta = globalToLocalDelta(global_pose_delta, avg_angle);
 
-		// add forward travel from local delta
+        // add forward travel from local delta
         forward_travel += local_pose_delta.x;
     }
 
@@ -205,6 +205,10 @@ class SmootherModel : public LocalizationModel {
     void changeConfiguration(SmootherConfig new_config) {
         std::lock_guard lock(m_mutex);
         config = new_config;
+    }
+
+    SmootherConfig getConfiguration() {
+        return config;
     }
 
     // returns a signed distance traveled from the start of tracking
