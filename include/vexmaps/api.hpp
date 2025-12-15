@@ -7,5 +7,4 @@
 #include "smoother_model.hpp"
 #include "model_manager.hpp"
 
-
 #include "blazing_wrapper.hpp"

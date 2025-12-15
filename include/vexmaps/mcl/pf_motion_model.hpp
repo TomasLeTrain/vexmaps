@@ -27,6 +27,9 @@ namespace vexmaps {
  *
  */
 class BasePfMotionModel : public LocalizationModel {
+  protected:
+    bool noise_enabled = true;
+
   public:
     /**
      * @brief Vectorized version of noisyGlobalDelta
@@ -46,6 +49,14 @@ class BasePfMotionModel : public LocalizationModel {
      * right before getting noisy global deltas.
      */
     virtual units::FPose precompute() = 0;
+
+    virtual void setNoiseEnabled(bool enabled) {
+        noise_enabled = enabled;
+    }
+
+    virtual bool getNoiseEnbled() {
+        return noise_enabled;
+    }
 };
 
 /**
@@ -220,17 +231,35 @@ class PfMotionModel : public BasePfMotionModel {
           motionModelConfig.angle_to_drift_noise * abs_delta_theta;
 
         // time and non time dependent noises combined
-        const Length distance_noise =
-          time_dependent_forwards_noise * time_noise_multiplier +
-          motionModelConfig.lost_iter_to_forwards_noise * lost_iteration_count;
+        const Length distance_noise = [&, this] -> Length {
+            if (noise_enabled) {
+                return time_dependent_forwards_noise * time_noise_multiplier +
+                       motionModelConfig.lost_iter_to_forwards_noise *
+                         lost_iteration_count;
+            } else {
+                return 0.001_in;
+            }
+        }();
 
-        const Angle angle_noise =
-          time_dependent_angle_noise * time_noise_multiplier +
-          motionModelConfig.lost_iter_to_angle_noise * lost_iteration_count;
+        const Angle angle_noise = [&, this] -> Angle {
+            if (noise_enabled) {
+                return time_dependent_angle_noise * time_noise_multiplier +
+                       motionModelConfig.lost_iter_to_angle_noise *
+                         lost_iteration_count;
+            } else {
+                return 0.01 * deg;
+            }
+        }();
 
-        const Length drift_noise =
-          time_dependent_drift_noise * time_noise_multiplier +
-          motionModelConfig.lost_iter_to_drift_noise * lost_iteration_count;
+        const Length drift_noise = [&, this] -> Length {
+            if (noise_enabled) {
+                return time_dependent_drift_noise * time_noise_multiplier +
+                       motionModelConfig.lost_iter_to_drift_noise *
+                         lost_iteration_count;
+            } else {
+                return 0.001_in;
+            }
+        }();
 
         average_distance_distribution =
           std::uniform_real_distribution<float>((-distance_noise).internal(),

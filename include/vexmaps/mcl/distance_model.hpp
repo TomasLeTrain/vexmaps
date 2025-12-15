@@ -51,9 +51,6 @@ class DistanceSensorModel : public Sensor {
     float Vver_wall_coeff;
 
     float fsina, fcosa;
-
-    // held in degrees specifically for map lookup
-    // defined as theta * 2 , constrained between [0,720]
     FAngle map_angle;
 
     float f_measured_distance = 0;
@@ -82,6 +79,58 @@ class DistanceSensorModel : public Sensor {
           config(config),
           map_reader(map_reader) {
         randomFactor = config.randomCoeff * randomUniformProbability;
+    }
+
+    // returns nullopt if doesn't hit
+    // otherwise returns distance to object
+    std::optional<FLength>
+    circleIntersection(units::V2Position position,
+                       Angle angle,
+                       units::V2FPosition circle_position,
+                       FLength radius,
+                       FLength actual_radius,
+                       FLength wall_distance,
+                       bool use_big_distance = false) {
+        auto u = circle_position - position;
+
+        // inside circle, activate smaller
+        if (u.magnitude() < radius) {
+            return u.magnitude();
+        }
+
+        auto unit_v = units::Vector2D<Number>::unitVector(angle);
+        Length cross = units::abs(u.cross(unit_v));
+        Length dot = u * unit_v;
+        auto diff = units::square(radius) - units::square(cross);
+
+        // circle is behind position, does not intersect
+        if (dot.internal() < 0) return std::nullopt;
+
+        // does not intersect circle
+        if (diff.internal() < 0) return std::nullopt;
+
+        // shortest intersection to circle
+        auto circle_dist = dot - units::sqrt(diff);
+
+        // circle not really intersected since wall distance was smaller
+        if (wall_distance < circle_dist) return std::nullopt;
+
+        auto actual_diff =
+          units::max(units::square(actual_radius) - units::square(cross),
+                     FArea(0));
+
+        // more accurate distance to obstacle
+        auto actual_dist = dot - units::sqrt(actual_diff);
+
+        // distance is too big so it's unlikely object is close enough where it
+        // matters
+        // if (units::abs(wall_distance - actual_dist) > 10_in &&
+        //     use_big_distance) {
+        //     return std::nullopt;
+        // }
+
+        // object might be measured, returns expected distance to object
+        return actual_dist;
     }
 
     void update(Angle angle, std::optional<units::FPose> pose) override {
@@ -167,23 +216,73 @@ class DistanceSensorModel : public Sensor {
         // (only depends on measured distance)
         expFactor = expVal * config.expCoeff + randomFactor;
 
+        bool make_shorter = false;
+
         if (pose) {
             FLength pose_distance_difference =
               getDistanceDifference(pose->x, pose->y);
 
-            // assumes pose is close enough to actual pose
+            FLength expected_distance =
+              pose_distance_difference + measured_distance;
+
+            if (config.detect_obstacles) {
+                FLength matchloader_x = 70_in;
+                FLength matchloader_y = 46.7_in;
+                FLength match_big_radius = 7_in;
+                FLength matchloader_actual_radius = 2_in;
+
+                FLength corner_x = 70_in;
+                FLength corner_y = 70_in;
+                FLength corner_radius = 10_in;
+
+                // check if it would have intersection with a matchloader
+                for (int i = -1; i <= 1; i += 2) {
+                    for (int j = -1; j <= 1; j += 2) {
+                        // check matchloader
+                        make_shorter |=
+                          circleIntersection(
+                            *pose,
+                            angle,
+                            { matchloader_x * i, matchloader_y * j },
+                            match_big_radius,
+                            matchloader_actual_radius,
+                            expected_distance)
+                            .has_value();
+
+                        // check corner
+                        make_shorter |=
+                          circleIntersection(*pose,
+                                             angle,
+                                             { corner_x * i, corner_y * j },
+                                             corner_radius,
+                                             corner_radius,
+                                             expected_distance)
+                            .has_value();
+                    }
+                }
+            }
+
+            FLength max_difference = config.maxDistanceDifference;
+            FLength max_out_difference = config.maxOutDistanceDifference;
+
+            if (make_shorter) {
+                // make difference shorter if possibly noisy
+                max_difference = 2.8_in;
+                max_out_difference = 3.0_in;
+            }
+
+            // measured is smaller than expected
             if (units::sgn(pose_distance_difference) > 0.0 &&
-                units::abs(pose_distance_difference) >
-                  config.maxDistanceDifference) {
+                units::abs(pose_distance_difference) > max_difference) {
                 exit = true;
             } else if
+              // measured is greater than expected
+              //
               // technically should never be a wrong measurement, however at
-              // weird angles a measurement might be greater than it actually
-              // should be. we can ignore measurements like these
+              // weird angles a measurement might be greater than it
+              // actually should be. we can ignore measurements like these
               (units::sgn(pose_distance_difference) < 0.0 &&
-               units::abs(pose_distance_difference) >
-                 // TODO: change 1.5 to be tunable
-                 1.5 * config.maxDistanceDifference) {
+               units::abs(pose_distance_difference) > max_out_difference) {
                 exit = true;
             }
         }
@@ -193,8 +292,10 @@ class DistanceSensorModel : public Sensor {
             std::cout << name << ":" << measured_distance.convert(in) << ","
                       << distance_sensor->get_confidence() << ","
                       << config.std_deviation << ","
-                      << (exit ? "true" : "false") << ","
-                      << distance_sensor->get_object_size() << "\n";
+                      << (exit ? "true" : "false")
+                      << ","
+                      // << distance_sensor->get_object_size() << "\n";
+                      << int(make_shorter) << "\n";
         }
     }
 
@@ -236,8 +337,8 @@ class DistanceSensorModel : public Sensor {
     //     // hor_wall = (horizontal_wall_length - x) * this->secant
     //     // hor_wall = (horizontal_wall_length * this->secant) + x *
     //     (-this->secant)
-    //     // hor_wall = HC [all precomputed]                    + x * x_coeff
-    //     [precomputed]
+    //     // hor_wall = HC [all precomputed]                    + x *
+    //     x_coeff [precomputed]
     //     //
     //     // -- direct difference formulation --
     //     // difference = expected_distance - measured_distance
@@ -263,18 +364,19 @@ class DistanceSensorModel : public Sensor {
     //     // HC = hor_wall_coeff + point.x * (-secant)
     //     // VC = ver_wall_coeff + point.y * (-cosecant)
     //     float32x4_t HC = vmlaq_n_f32(vdupq_n_f32(Vhor_wall_coeff), x,
-    //     x_coeff); float32x4_t VC = vmlaq_n_f32(vdupq_n_f32(Vver_wall_coeff),
-    //     y, y_coeff);
+    //     x_coeff); float32x4_t VC =
+    //     vmlaq_n_f32(vdupq_n_f32(Vver_wall_coeff), y, y_coeff);
     //
     //     // difference = min(HC,VC)
     //     float32x4_t difference = vminq_f32(HC, VC);
     //
-    //     // each number is all UINT_MAX if (expected - measured) is >= 0, else
+    //     // each number is all UINT_MAX if (expected - measured) is >= 0,
+    //     else
     //     // its 0
     //     uint32x4_t modMask = vcgeq_f32(difference, vdupq_n_f32(0.0));
     //
-    //     // constantFactor = measured <= expected ? expFactor : randomFactor
-    //     float32x4_t VMaskedConstantFactor =
+    //     // constantFactor = measured <= expected ? expFactor :
+    //     randomFactor float32x4_t VMaskedConstantFactor =
     //       vbslq_f32(modMask, vdupq_n_f32(expFactor),
     //       vdupq_n_f32(randomFactor));
     //
