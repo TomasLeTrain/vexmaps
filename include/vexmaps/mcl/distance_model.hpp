@@ -99,6 +99,7 @@ class DistanceSensorModel : public Sensor {
         }
 
         auto unit_v = units::Vector2D<Number>::unitVector(angle);
+
         Length cross = units::abs(u.cross(unit_v));
         Length dot = u * unit_v;
         auto diff = units::square(radius) - units::square(cross);
@@ -242,7 +243,7 @@ class DistanceSensorModel : public Sensor {
                         make_shorter |=
                           circleIntersection(
                             *pose,
-                            angle,
+                            rotated_offsets.orientation,
                             { matchloader_x * i, matchloader_y * j },
                             match_big_radius,
                             matchloader_actual_radius,
@@ -252,7 +253,7 @@ class DistanceSensorModel : public Sensor {
                         // check corner
                         make_shorter |=
                           circleIntersection(*pose,
-                                             angle,
+                                             rotated_offsets.orientation,
                                              { corner_x * i, corner_y * j },
                                              corner_radius,
                                              corner_radius,
@@ -528,19 +529,6 @@ class DistanceSensorModel : public Sensor {
         if (exit) {
             return std::nullopt;
         }
-
-        // std::cout << std::format("offset is {}, {}, {}. hor/ver wall is
-        // {},{}, "
-        //                          "measured is {}, fcos/sin {},{}",
-        //                          rotated_offsets.x.convert(in),
-        //                          rotated_offsets.y.convert(in),
-        //                          rotated_offsets.orientation.convert(deg),
-        //                          horizontal_wall_length.convert(in),
-        //                          vertical_wall_length.convert(in),
-        //                          measured_distance.convert(in),
-        //                          fcosa,
-        //                          fsina)
-        //           << std::endl;
 
         return units::V2Position {
             horizontal_wall_length - measured_distance * fcosa,

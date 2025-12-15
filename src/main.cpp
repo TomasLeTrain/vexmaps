@@ -4,6 +4,7 @@
 #include "pros/distance.hpp"
 #include "pros/misc.h"
 #include "units/Angle.hpp"
+#include "units/Pose.hpp"
 #include "units/units.hpp"
 #include "vexmaps/api.hpp"
 #include "vexmaps/mcl/map_reader.hpp"
@@ -23,23 +24,8 @@ vexmaps::PFConfiguration Pfconfig = {
     .particle_logging = false,
 };
 
-struct CustomDistanceSensorConfiguration {
-    // all floats without units are in meters
-    static constexpr double exp_l = 1.5;
-    static constexpr double std_deviation = (2_in).internal();
-    static constexpr double map_deviation = (3_in).internal();
-
-    // all these should add to one
-    static constexpr double randomCoeff = 0.0;
-    static constexpr double expCoeff = 0.15;
-    static constexpr double normalCoeff = 0.6;
-    static constexpr double mapCoeff = 0.25;
-
-    static constexpr bool logging = general_logging;
-    // static constexpr bool logging = false;
-};
-
-vexmaps::DistanceSensorConfig distance_sensor_config {};
+vexmaps::DistanceSensorConfig distance_sensor_config { .detect_obstacles =
+                                                         true };
 
 class FakeDistance : public pros::Distance {
   private:
@@ -127,32 +113,56 @@ vexmaps::PfMotionModel<vexmaps::OdometryModel>
 MapReader<> map_reader;
 
 FakeDistance fake_distance;
+FakeDistance fake_front_distance;
+FakeDistance fake_back_distance;
+FakeDistance fake_left_distance;
+FakeDistance fake_right_distance;
 
-vexmaps::DistanceSensorModel front_laser_model(&front_sensor,
-                                               { 5.25_in, 5.4375_in, 0_stDeg },
-                                               1.0,
+units::Pose front_distance_offsets = { 3.5_in,
+                                       +(12.5_in / 2) - 1.25_in,
+                                       0_stDeg };
+
+units::Pose left_distance_offsets = { 3.5_in + 0.625_in,
+                                      +(12.5_in / 2) - 1.25_in - 0.4_in,
+                                      90_stDeg };
+
+units::Pose back_distance_offsets = { -(15.5_in / 2) + 1.4_in,
+                                      3.0_in,
+                                      180_stDeg };
+
+units::Pose right_distance_offsets = { -0.7_in,
+                                       -(12.5_in / 2) + 2.25_in,
+                                       270_stDeg };
+
+double front_distance_scale_factor = 0.986105769705;
+double left_distance_scale_factor = 0.985;
+double back_distance_scale_factor = 0.97905795044;
+double right_distance_scale_factor = 0.985454688793;
+
+vexmaps::DistanceSensorModel front_laser_model(&fake_front_distance,
+                                               front_distance_offsets,
+                                               front_distance_scale_factor,
                                                "front",
                                                distance_sensor_config,
                                                &map_reader);
-vexmaps::DistanceSensorModel left_laser_model(&left_sensor,
-                                              { 3_in, 5.25_in, 90_stDeg },
-                                              1.0,
+vexmaps::DistanceSensorModel left_laser_model(&fake_left_distance,
+                                              left_distance_offsets,
+                                              left_distance_scale_factor,
                                               "left",
                                               distance_sensor_config,
                                               &map_reader);
-vexmaps::DistanceSensorModel back_laser_model(&back_sensor,
-                                              { -4_in, -1.84375_in, 180_stDeg },
-                                              1.0,
+vexmaps::DistanceSensorModel back_laser_model(&fake_back_distance,
+                                              back_distance_offsets,
+                                              back_distance_scale_factor,
                                               "back",
                                               distance_sensor_config,
                                               &map_reader);
-vexmaps::DistanceSensorModel
-  right_laser_model(&right_sensor,
-                    { 4.25_in, -5.375_in, 270_stDeg },
-                    1.0,
-                    "right",
-                    distance_sensor_config,
-                    &map_reader);
+vexmaps::DistanceSensorModel right_laser_model(&fake_right_distance,
+                                               right_distance_offsets,
+                                               right_distance_scale_factor,
+                                               "right",
+                                               distance_sensor_config,
+                                               &map_reader);
 
 vexmaps::DistanceSensorModel fake_distance_model(&fake_distance,
                                                  { 0_in, 0_in, 0_stDeg },
@@ -179,29 +189,7 @@ vexmaps::ModelManager model_manager(
   &smoother_model);
 
 void initialize() {
-    // std::cout << "entered initialize" << std::endl;
-    // pros::c::serctl(SERCTL_DISABLE_COBS, NULL);
-
-    // reset the imu
-    // imu.reset(true);
-
-    // must read map before any distance sensor gets used
-
-    auto start_time = pros::millis();
-    map_reader.read_compressed("/usd/field_720_100_100.map.compressed");
-
-    if (!map_reader.mapAvailable()) {
-        std::cout << "try to read uncompressed map" << std::endl;
-        ;
-        map_reader.read("/usd/field_720_100_100.map");
-    }
-
-    auto end_time = pros::millis();
-    std::cout << "read map in " << end_time - start_time << " milliseconds."
-              << std::endl;
-
-    // initialize all models and create their tasks
-    // model_manager.init();
+    pros::c::serctl(SERCTL_DISABLE_COBS, NULL);
 }
 
 void disabled() {}
@@ -211,166 +199,104 @@ void competition_initialize() {}
 void autonomous() {}
 
 void opcontrol() {
+    std::cout << "entered opcontrol" << std::endl;
 
-    pros::Task([] {
-        std::cout << "entered opcontrol" << std::endl;
+    float sum_of_dists = 0.0;
 
-        float sum_of_dists = 0.0;
+    int n = 100;
 
-        float theta2 = 60;
-        int theta = 0;
+    // std::uniform_real_distribution<float> xs(-70, 70);
+    // std::uniform_real_distribution<float> ys(-70, 70);
+    // std::uniform_real_distribution<float> thetas(0, 360);
 
-        // for (; theta <= 720; theta++) {
-        // for (int x = -70; x <= 70; x++) {
-        //     for (int y = -70; y <= 70; y++) {
-        //     }
-        // }
-        // }
+    // Xoshiro128plus rng(10);
 
-        int n = 5'000;
-
-        std::uniform_real_distribution<float> xs(-70, 70);
-        std::uniform_real_distribution<float> ys(-70, 70);
-        std::uniform_real_distribution<float> thetas(0, 360);
-
-        Xoshiro128plus rng(10);
-
-        // std::vector<units::FPose> poses(n);
-        std::vector<FLength> v_x(n + 100);
-        std::vector<FLength> v_y(n + 100);
-        // std::vector<units::FPose> poses(n);
-
-        std::vector<float> curr_weights(n + 100);
-        std::vector<float> curr_weights2(n + 100);
-        std::vector<float> tmp_list(n + 100);
-
-        for (int i = 0; i < n; i++) {
-            v_x[i] = xs(rng) * in;
-            v_y[i] = ys(rng) * in;
-            // poses[i] = { v_x[i], v_y[i], thetas(rng) * deg };
-        }
-
-        fake_distance.set_length(30_Fin);
-        fake_distance_model.update(60_FstDeg, std::nullopt);
-
-        v_x[0] = -20_in;
-        v_y[0] = 20_in;
-
-        auto wall_start_time = pros::micros();
-        // for (auto& pose : poses) {
-        //     FLength query1 = map_reader.query(pose.x, pose.y,
-        //     pose.orientation); sum_of_dists += query1.internal();
-        // }
-
-        fake_distance_model.evaluate_wall_array(
-          curr_weights.data(),
-          reinterpret_cast<float*>(v_x.data()),
-          reinterpret_cast<float*>(v_y.data()),
-          tmp_list.data(),
-          n);
-
-        auto wall_end_time = pros::micros();
-        // std::cout << "poses[0] is " << poses[0].x.convert(in) << " "
-        //           << poses[0].y.convert(in) << " "
-        //           << poses[0].orientation.convert(deg) << std::endl;
-
-        auto old_start_time = pros::micros();
-        for (int i = 0; i < n; i++) {
-            curr_weights2[i] = fake_distance_model.evaluate(v_x[i], v_y[i]);
-        }
-        auto old_end_time = pros::micros();
-
-        std::cout << "before all, curr_weights[0] = " << curr_weights[0]
-                  << std::endl;
-
-        // check if curr weights is valid
-        for (int i = 0; i < n; i++) {
-            if (auto diff = std::abs(curr_weights2[i] - curr_weights[i]);
-                diff > 1e-3) {
-                std::cout << "differ by: " << diff << std::endl;
-            }
-        }
-        std::cout << "stopped checking!" << std::endl;
-
-        std::cout << "new wall in  " << wall_end_time - wall_start_time
-                  << " microseconds." << std::endl;
-        std::cout << "old wall in  " << old_end_time - old_start_time
-                  << " microseconds." << std::endl;
-
-        auto all_start_time = pros::micros();
-        fake_distance_model.evaluate_array(curr_weights.data(),
-                                           v_x.data(),
-                                           v_y.data(),
-                                           tmp_list.data(),
-                                           n);
-        auto all_end_time = pros::micros();
-
-        // make it so the above is not optimized away
-        for (int i = 0; i < n; i++) {
-            sum_of_dists += curr_weights[i];
-        }
-
-        std::cout << "all wall in  " << all_end_time - all_start_time
-                  << " microseconds." << std::endl;
-
-        std::cout << "result of computation was " << sum_of_dists << std::endl;
-
-        auto query1 = map_reader.query(-20_Fin, 20_Fin, 60_FstDeg);
-        std::cout << "custom queyr " << (query1).convert(in) << std::endl;
-
-        std::cout << "curr weight[0] = " << curr_weights[0] << std::endl;
-    });
-
-    // std::cout << query1 * in.internal() << std::endl;
-
-    // set the pose
-    // model_manager.setPose({ 48_in, -48_in, 0_stDeg });
+    // std::vector<FLength> v_x(n);
+    // std::vector<FLength> v_y(n);
     //
-    // // printf("doing more stuff\n");
-    // bool manual_logging = true;
+    // std::vector<float> curr_weights(n);
+    // std::vector<float> curr_weights2(n);
+    // std::vector<float> tmp_list(n);
+
+    // Length measured_distance = 18.4_in;
+    units::Pose curr_pose = { 45.3_in, -42.2_in, 269.13_stDeg };
+
+    // fake_distance.set_length(measured_distance);
+    fake_front_distance.set_length(24.575_in);
+    fake_left_distance.set_length(15.822_in);
+
+    std::cout << "front" << std::endl;
+    front_laser_model.update(curr_pose.orientation, curr_pose);
+    std::cout << "left" << std::endl;
+    left_laser_model.update(curr_pose.orientation, curr_pose);
+    std::cout << "right" << std::endl;
+    right_laser_model.update(curr_pose.orientation, curr_pose);
+    std::cout << "back" << std::endl;
+    back_laser_model.update(curr_pose.orientation, curr_pose);
+    // fake_distance_model.update(curr_pose.orientation, curr_pose);
+
+    // std::cout << "exit is "
+    //           << (fake_distance_model.hasAvailableReading() ? "false" :
+    //           "true")
+    //           << std::endl;
+
+    // v_x[0] = -20_in;
+    // v_y[0] = 20_in;
     //
-    // while (true) {
-    //     if (manual_logging) {
-    //         int start_time = pros::millis();
-    //         printf(
-    //           "start generation\nstart distances\nend distances\nstart "
-    //           "parti" "cles" "\n");
+    // auto wall_start_time = pros::micros();
     //
-    //         printf("%.1f %.1f %.1f\n",
-    //                odom_model.getPose().x.convert(in),
-    //                odom_model.getPose().y.convert(in),
-    //                0.0);
-    //         printf("%.1f %.1f %.1f\n",
-    //                pf_model.getPose().x.convert(in),
-    //                pf_model.getPose().y.convert(in),
-    //                5.0);
-    //         printf("%.1f %.1f %.1f\n",
-    //                smoother_model.getPose().x.convert(in),
-    //                smoother_model.getPose().y.convert(in),
-    //                10.0);
+    // fake_distance_model.evaluate_wall_array(
+    //   curr_weights.data(),
+    //   reinterpret_cast<float*>(v_x.data()),
+    //   reinterpret_cast<float*>(v_y.data()),
+    //   tmp_list.data(),
+    //   n);
     //
-    //         printf(
-    //           "end particles\ntotal weight: 0, time taken: 30000, "
-    //           "timestamp:" " %d\n", start_time);
-    //         printf("things done:1,1,0,%d\n", particle_count);
-    //         printf("prediction:%.1f,%.1f,%.1f\n",
-    //                smoother_model.getPose().x.convert(in),
-    //                smoother_model.getPose().y.convert(in),
-    //                smoother_model.getPose().orientation.convert(deg));
-    //         printf("end generation\n");
-    //     }
+    // auto wall_end_time = pros::micros();
     //
-    //     if (master.get_digital_new_press(pros::E_CONTROLLER_DIGITAL_A)) {
-    //         smoother_model.setPose({ 48_in, -48_in, 90_stDeg });
-    //     }
-    //
-    //     // // Arcade control scheme
-    //     int dir = master.get_analog(
-    //       ANALOG_LEFT_Y); // Gets amount forward/backward from left joystick
-    //     int turn = master.get_analog(
-    //       ANALOG_RIGHT_X); // Gets the turn left/right from right joystick
-    //     leftMotors.move(dir + turn); // Sets left motor voltage
-    //     rightMotors.move(dir - turn); // Sets right motor voltage
-    //     pros::delay(20); // Run for 20 ms then update
+    // auto old_start_time = pros::micros();
+    // for (int i = 0; i < n; i++) {
+    //     curr_weights2[i] = fake_distance_model.evaluate(v_x[i], v_y[i]);
     // }
+    // auto old_end_time = pros::micros();
+    //
+    // std::cout << "before all, curr_weights[0] = " << curr_weights[0]
+    //           << std::endl;
+    //
+    // // check if curr weights is valid
+    // for (int i = 0; i < n; i++) {
+    //     if (auto diff = std::abs(curr_weights2[i] - curr_weights[i]);
+    //         diff > 1e-3) {
+    //         std::cout << "differ by: " << diff << std::endl;
+    //     }
+    // }
+    // std::cout << "stopped checking!" << std::endl;
+    //
+    // std::cout << "new wall in  " << wall_end_time - wall_start_time
+    //           << " microseconds." << std::endl;
+    // std::cout << "old wall in  " << old_end_time - old_start_time
+    //           << " microseconds." << std::endl;
+    //
+    // auto all_start_time = pros::micros();
+    // fake_distance_model.evaluate_array(curr_weights.data(),
+    //                                    v_x.data(),
+    //                                    v_y.data(),
+    //                                    tmp_list.data(),
+    //                                    n);
+    // auto all_end_time = pros::micros();
+    //
+    // // make it so the above is not optimized away
+    // for (int i = 0; i < n; i++) {
+    //     sum_of_dists += curr_weights[i];
+    // }
+    //
+    // std::cout << "all wall in  " << all_end_time - all_start_time
+    //           << " microseconds." << std::endl;
+    //
+    // std::cout << "result of computation was " << sum_of_dists << std::endl;
+    //
+    // auto query1 = map_reader.query(-20_Fin, 20_Fin, 60_FstDeg);
+    // std::cout << "custom queyr " << (query1).convert(in) << std::endl;
+    //
+    // std::cout << "curr weight[0] = " << curr_weights[0] << std::endl;
 }
