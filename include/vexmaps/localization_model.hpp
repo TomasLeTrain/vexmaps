@@ -3,6 +3,7 @@
 #include "pros/rtos.h"
 #include "pros/rtos.hpp"
 #include "units/Pose.hpp"
+#include "units/Vector2D.hpp"
 #include "units/units.hpp"
 
 namespace vexmaps {
@@ -57,6 +58,9 @@ class LocalizationModel {
 
     // returns a signed distance traveled from the start of tracking
     virtual Length getForwardTravel() = 0;
+
+	// returns local velocity vector relative to the robot
+    virtual units::V2Velocity getLocalVelocityVector() = 0;
 
     // returns the latest angular velocity
     virtual AngularVelocity getAngularVelocity() = 0;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "units/Angle.hpp"
+#include "units/Vector2D.hpp"
 #include "vexmaps/localization_model.hpp"
 #include "vexmaps/mcl/config.hpp"
 #include "vexmaps/mcl/particle_filter.hpp"
@@ -25,6 +26,7 @@ class ParticleFilterModel : public LocalizationModel {
     units::Pose local_delta;
 
     Length forward_travel = 0_m;
+    units::V2Velocity local_velocity_vector;
     AngularVelocity angular_velocity;
 
   protected:
@@ -51,13 +53,12 @@ class ParticleFilterModel : public LocalizationModel {
           units::Pose(curr_pose - last_pose,
                       curr_pose.orientation - last_pose.orientation);
 
-        const Angle avg_angle =
-          (curr_pose.orientation + last_pose.orientation) / 2.0;
-
-        local_delta = globalToLocalDelta(global_delta, avg_angle);
+        local_delta = globalToLocalDelta(global_delta, curr_pose.orientation);
 
         // add forward travel from local delta
         forward_travel += local_delta.x;
+
+        local_velocity_vector = local_delta / getTaskDeltaTime();
         angular_velocity = global_delta.orientation / getTaskDeltaTime();
 
         latest_update_time = from_msec(pros::millis());
@@ -143,6 +144,12 @@ class ParticleFilterModel : public LocalizationModel {
     // returns a signed distance traveled from the start of tracking
     Length getForwardTravel() override {
         return forward_travel;
+    }
+
+    // returns local velocity vector relative to the robot
+    units::V2Velocity getLocalVelocityVector() override {
+        // uses directly from local delta model since its likely very accurate
+        return local_velocity_vector;
     }
 
     // returns the latest angular velocity

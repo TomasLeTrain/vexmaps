@@ -1,6 +1,7 @@
 #pragma once
 
 #include "localization_model.hpp"
+#include "units/Vector2D.hpp"
 #include "vexmaps/localization_model.hpp"
 
 // wrapper for vexmaps models, compatible with blazing
@@ -31,6 +32,10 @@ class BlazingWrapper {
 
     LinearVelocity getLinearVelocity() {
         return model->getLocalPoseDelta().x / model->getTaskDeltaTime();
+    }
+
+	units::V2Velocity getLocalVelocityVector() {
+        return model->getLocalVelocityVector();
     }
 
     AngularVelocity getAngularVelocity() {

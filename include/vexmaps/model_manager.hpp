@@ -180,6 +180,12 @@ class ModelManager : public LocalizationModel {
         return active_model->getForwardTravel();
     }
 
+    // returns local velocity vector relative to the robot
+    units::V2Velocity getLocalVelocityVector() override {
+        assert(active_model != nullptr);
+        return active_model->getLocalVelocityVector();
+    }
+
     // returns the latest angular velocity
     AngularVelocity getAngularVelocity() override {
         assert(active_model != nullptr);

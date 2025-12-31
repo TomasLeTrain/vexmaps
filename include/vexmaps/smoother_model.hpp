@@ -216,6 +216,12 @@ class SmootherModel : public LocalizationModel {
         return forward_travel;
     }
 
+    // returns local velocity vector relative to the robot
+    units::V2Velocity getLocalVelocityVector() override {
+        // uses directly from local delta model since its likely very accurate
+        return local_delta_model->getLocalVelocityVector();
+    }
+
     // returns the latest angular velocity
     AngularVelocity getAngularVelocity() override {
         // just uses angular velocity from local delta model

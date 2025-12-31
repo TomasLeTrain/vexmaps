@@ -25,10 +25,11 @@ class OdometryModel : public LocalizationModel {
     std::vector<VerticalOdometryTracker*> vertical_trackers;
 
     pros::Imu* imu;
+    units::V2Position m_tracking_center_offsets;
 
     Angle last_imu_angle = 0_stDeg;
 
-    units::V2Position local_delta;
+    units::V2Position last_local_delta, local_delta;
     units::V2Position global_delta;
     Angle angle_delta = 0_stDeg;
 
@@ -41,6 +42,7 @@ class OdometryModel : public LocalizationModel {
     Time latest_update_time = 0_sec;
 
     Length forward_travel = 0_m;
+    units::V2Velocity local_velocity_vector;
     AngularVelocity angular_velocity;
 
     bool use_drivetrain = false;
@@ -56,6 +58,7 @@ class OdometryModel : public LocalizationModel {
       std::initializer_list<HorizontalOdometryTracker*> horizontal_trackers,
       std::initializer_list<VerticalOdometryTracker*> vertical_trackers,
       pros::Imu* imu,
+      units::V2Position tracking_center_offsets = { 0_in, 0_in },
       bool use_drivetrain = false,
       bool print_on_failure = false)
         : left_tracker(left_tracker),
@@ -63,6 +66,7 @@ class OdometryModel : public LocalizationModel {
           horizontal_trackers(horizontal_trackers),
           vertical_trackers(vertical_trackers),
           imu(imu),
+          m_tracking_center_offsets(tracking_center_offsets),
           use_drivetrain(use_drivetrain),
           m_print_on_failure(print_on_failure) {}
 
@@ -225,8 +229,6 @@ class OdometryModel : public LocalizationModel {
 
         global_delta = localToGlobalDelta(local_delta, avg_angle);
 
-        last_pose = pose;
-
         // only changes x/y, not orientation (it was already updated)
         pose += global_delta;
 
@@ -234,40 +236,52 @@ class OdometryModel : public LocalizationModel {
 
         forward_travel += local_delta.x;
 
+        // averages last and current local deltas to eliminate noise
+        local_velocity_vector =
+          (local_delta + last_local_delta) / (getTaskDeltaTime() * 2);
+
         // uses imu measurement directly
         angular_velocity = (imu->get_gyro_rate().z) * degps;
 
         // update last- variables
+        last_pose = pose;
         last_imu_angle = current_imu_angle;
+        last_local_delta = local_delta;
         latest_update_time = from_msec(pros::millis());
     }
 
     void setPose(units::Pose new_pose) override {
         std::lock_guard lock(m_mutex);
+
+        // change from the tracking center to the center of rotation
+        new_pose -= m_tracking_center_offsets.rotatedBy(new_pose.orientation);
+
         pose = new_pose;
-
-        // last_set_orientation = new_pose.orientation.internal();
-        // imu->set_heading(0);
-
         last_pose = pose;
     }
 
     // getters
     units::Pose getPose() override {
-        return pose;
+        // change from the center of rotation to the tracking center
+        return { pose + m_tracking_center_offsets.rotatedBy(pose.orientation),
+                 pose.orientation };
     }
 
     /**
      * @brief gets the previous available pose
      */
     units::Pose getLastPose() override {
-        return last_pose;
+        // change from the center of rotation to the tracking center
+        return { last_pose +
+                   m_tracking_center_offsets.rotatedBy(last_pose.orientation),
+                 last_pose.orientation };
     }
 
     /**
      * @brief Get latest global pose delta
      */
     units::Pose getGlobalPoseDelta() override {
+        // TODO: should take into account tracking center offsets
         return units::Pose(global_delta, angle_delta);
     }
 
@@ -309,6 +323,12 @@ class OdometryModel : public LocalizationModel {
     // returns a signed distance traveled from the start of tracking
     Length getForwardTravel() override {
         return forward_travel;
+    }
+
+    // returns local velocity vector relative to the robot
+    units::V2Velocity getLocalVelocityVector() override {
+        // uses directly from local delta model since its likely very accurate
+        return local_velocity_vector;
     }
 
     // returns the latest angular velocity
