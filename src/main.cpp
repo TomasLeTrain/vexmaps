@@ -5,6 +5,7 @@
 #include "pros/misc.h"
 #include "units/Angle.hpp"
 #include "units/Pose.hpp"
+#include "units/Vector2D.hpp"
 #include "units/units.hpp"
 #include "vexmaps/api.hpp"
 #include "vexmaps/mcl/map_reader.hpp"
@@ -108,6 +109,8 @@ vexmaps::PfMotionModel<vexmaps::OdometryModel>
              // horizontalTrackers {},
              // verticalTrackers {},
              &imu,
+             units::V2Position { 0_in, 0_in },
+             false,
              false);
 
 MapReader<> map_reader;

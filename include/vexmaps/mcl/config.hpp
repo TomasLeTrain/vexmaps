@@ -14,6 +14,7 @@ struct PFConfiguration {
     bool logging = false;
     bool particle_logging = false;
     bool custom_particle_logging = false;
+	bool print_custom_data = false;
 
     // threshold for sum of weights before normalization which determines if the
     // iteration is lost this should be tuned so iterations which are clearly

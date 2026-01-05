@@ -168,6 +168,11 @@ class ParticleFilterModel : public LocalizationModel {
         particle_filter.setCustomPrediction(pose);
     }
 
+    void setCustomData(std::string data) {
+        std::lock_guard lock(m_mutex);
+        particle_filter.setCustomData(data);
+    }
+
     void setReferenceModel(LocalizationModel* model) {
         particle_filter.setReferenceModel(model);
     }

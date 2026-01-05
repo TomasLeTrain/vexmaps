@@ -165,6 +165,12 @@ class PfMotionModel : public BasePfMotionModel {
         return base_motion_model.getForwardTravel();
     }
 
+    // returns local velocity vector relative to the robot
+    units::V2Velocity getLocalVelocityVector() override {
+        // uses directly from local delta model since its likely very accurate
+        return base_motion_model.getLocalVelocityVector();
+    }
+
     // returns the latest angular velocity
     AngularVelocity getAngularVelocity() override {
         return base_motion_model.getAngularVelocity();

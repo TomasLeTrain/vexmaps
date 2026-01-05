@@ -35,6 +35,7 @@ class ParticleFilter {
 
     std::vector<std::pair<units::V2FPosition, float>> custom_particles;
     units::FPose custom_prediction;
+    std::string custom_data;
 
     BasePfMotionModel* motion_model;
     PFConfiguration PFConfig;
@@ -358,6 +359,10 @@ class ParticleFilter {
                        this->prediction.orientation.convert(Fdeg));
             }
 
+            if (PFConfig.print_custom_data) {
+                std::cout << this->custom_data << '\n';
+            }
+
             printf("end generation\n");
         }
     }
@@ -605,6 +610,10 @@ class ParticleFilter {
 
     void setCustomPrediction(units::FPose pose) {
         custom_prediction = pose;
+    }
+
+    void setCustomData(std::string data) {
+        custom_data = data;
     }
 
     void setReferenceModel(LocalizationModel* model) {

@@ -229,7 +229,7 @@ class DistanceSensorModel : public Sensor {
             if (config.detect_obstacles) {
                 FLength matchloader_x = 70_in;
                 FLength matchloader_y = 46.7_in;
-                FLength match_big_radius = 7_in;
+                FLength match_big_radius = 10_in;
                 FLength matchloader_actual_radius = 2_in;
 
                 FLength corner_x = 70_in;
@@ -268,8 +268,8 @@ class DistanceSensorModel : public Sensor {
 
             if (make_shorter) {
                 // make difference shorter if possibly noisy
-                max_difference = 2.8_in;
-                max_out_difference = 3.0_in;
+                max_difference = 2.6_in;
+                max_out_difference = 2.6_in;
             }
 
             // measured is smaller than expected
