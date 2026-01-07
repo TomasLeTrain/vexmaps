@@ -64,6 +64,9 @@ class Sensor {
         return false;
     }
 
+    // returns if x/y are known exactly at target_pose
+    virtual std::pair<bool, bool> getKnownCoords(units::Pose target_pose) = 0;
+
     virtual ~Sensor() = default;
 };
 } // namespace vexmaps

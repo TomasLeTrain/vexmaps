@@ -7,6 +7,13 @@
 #include "units/units.hpp"
 
 namespace vexmaps {
+
+struct Confidences {
+	bool know_x;
+	bool know_y;
+	bool know_theta;
+};
+
 class LocalizationModel {
   public:
     LocalizationModel() {}
@@ -43,7 +50,7 @@ class LocalizationModel {
      *
      * @return the confidence on the estimate (if available)
      */
-    virtual std::optional<float> getConfidence() = 0;
+    virtual std::optional<Confidences> getConfidence() = 0;
 
     /**
      * @brief Total distance the robot has traveled

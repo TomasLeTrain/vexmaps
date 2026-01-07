@@ -14,6 +14,7 @@
 #include <cmath>
 #include <memory>
 #include <optional>
+#include <utility>
 
 namespace vexmaps {
 
@@ -35,6 +36,10 @@ class DistanceSensorModel : public Sensor {
     // determines whether or not readings from this sensor are used - false when
     // there are no measurements
     bool exit = false;
+
+    // used for certain procedures where using only absolutely new measurements
+    // is not super important (i.e. distance sensor resets)
+    bool exit_without_new_measurement = false;
 
     // when false, sensor is not used regardless of measurements
     bool enabled = true;
@@ -64,6 +69,10 @@ class DistanceSensorModel : public Sensor {
     // used for getExpected
     FLength horizontal_wall_length;
     FLength vertical_wall_length;
+
+    bool new_measurement = false;
+
+    std::optional<std::pair<int32_t, Time>> last_measurement = std::nullopt;
 
   public:
     DistanceSensorModel(pros::Distance* distance_sensor,
@@ -146,6 +155,22 @@ class DistanceSensorModel : public Sensor {
         }
 
         const int32_t measured_mm = distance_sensor->get();
+        auto installed = distance_sensor->is_installed();
+
+        Time now = from_msec(pros::millis());
+
+        constexpr Time DIST_POLLING_RATE = 1.0 / 30_Hz;
+
+        new_measurement = !installed ||
+                          // either we don't have last measurement
+                          !last_measurement ||
+                          // or measurements differ
+                          (last_measurement->first != measured_mm ||
+                           // or we are guaranteed to have new measurements
+                           now - last_measurement->second > DIST_POLLING_RATE);
+
+        // updated only once to keep last_measurement_time accurate
+        if (new_measurement) last_measurement = { measured_mm, now };
 
         measured_distance = from_mm(measured_mm);
 
@@ -158,8 +183,17 @@ class DistanceSensorModel : public Sensor {
 
         f_measured_distance = measured_distance.internal();
 
-        // distance sensor doesn't measure anything
-        exit = measured_mm == 9999 || (!enabled);
+        exit_without_new_measurement =
+          // not connected
+          !installed ||
+          // distance sensor doesn't measure anything
+          measured_mm == 9999
+          // or disabled
+          || (!enabled);
+
+        exit = exit_without_new_measurement
+               // or didn't receieve new data
+               || !new_measurement;
 
         // rotates offset and angle
         rotated_offsets = FrotatePose(offsets, angle);
@@ -292,7 +326,7 @@ class DistanceSensorModel : public Sensor {
             // name:distance,confidence,std,exit,obj_size
             std::cout << name << ":" << measured_distance.convert(in) << ","
                       << distance_sensor->get_confidence() << ","
-                      << config.std_deviation << ","
+                      << (exit_without_new_measurement ? 1.0 : 0.0) << ","
                       << (exit ? "true" : "false")
                       << ","
                       // << distance_sensor->get_object_size() << "\n";
@@ -318,6 +352,8 @@ class DistanceSensorModel : public Sensor {
         }
     }
 
+    // returns calculated difference from measurement and expectation
+    //
     // assumes that its only getting called if exit is false
     // this assumption saves some conditionals improving performance
     FLength getDistanceDifference(FLength x, FLength y) {
@@ -526,7 +562,7 @@ class DistanceSensorModel : public Sensor {
     // measurements.
     // can be used for distance sensor resets
     std::optional<units::V2FPosition> getExpected() override {
-        if (exit) {
+        if (exit_without_new_measurement) {
             return std::nullopt;
         }
 
@@ -575,6 +611,18 @@ class DistanceSensorModel : public Sensor {
 
     bool canProcessArray() override {
         return true;
+    }
+
+    std::pair<bool, bool> getKnownCoords(units::Pose target_pose) override {
+        const FLength hor_difference = hor_wall_coeff + target_pose.x * x_coeff;
+        const FLength ver_difference = ver_wall_coeff + target_pose.y * y_coeff;
+
+        // hitting horizontal wall, we know x coordinate
+        if (hor_difference < ver_difference) {
+            return { true, false };
+        } else {
+            return { false, true };
+        }
     }
 };
 } // namespace vexmaps

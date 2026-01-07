@@ -136,7 +136,7 @@ class PfMotionModel : public BasePfMotionModel {
         accumulated_global_delta = units::FPose();
     }
 
-    std::optional<float> getConfidence() override {
+    std::optional<Confidences> getConfidence() override {
         return base_motion_model.getConfidence();
     }
 

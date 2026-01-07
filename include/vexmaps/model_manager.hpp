@@ -154,11 +154,6 @@ class ModelManager : public LocalizationModel {
         return active_model->getLocalPoseDelta();
     }
 
-    std::optional<float> getConfidence() override {
-        assert(active_model != nullptr);
-        return active_model->getConfidence();
-    }
-
     Length getDistanceTraveled() override {
         assert(active_model != nullptr);
         return active_model->getDistanceTraveled();
@@ -191,5 +186,10 @@ class ModelManager : public LocalizationModel {
         assert(active_model != nullptr);
         return active_model->getAngularVelocity();
     }
+
+    std::optional<Confidences> getConfidence() override {
+        assert(active_model != nullptr);
+        return active_model->getConfidence();
+	}
 };
 } // namespace vexmaps

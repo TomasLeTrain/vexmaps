@@ -5,6 +5,7 @@
 #include "units/Pose.hpp"
 #include "units/Vector2D.hpp"
 #include "units/units.hpp"
+#include "vexmaps/localization_model.hpp"
 #include "vexmaps/mcl/config.hpp"
 #include "vexmaps/mcl/pf_motion_model.hpp"
 #include "vexmaps/mcl/sensor.hpp"
@@ -88,7 +89,7 @@ class ParticleFilter {
     FAngle current_angle = 0_FstDeg;
 
     // set to 1 when we have a global measurement, otherwise nullopt
-    std::optional<float> confidence = std::nullopt;
+    std::optional<Confidences> confidence = std::nullopt;
 
     // disables most of the particle filters actions (still applies noise and
     // motion model to prediction)
@@ -138,14 +139,14 @@ class ParticleFilter {
 
     void updateSensors() {
         // uses an approximate position using global delta
-        units::FPose approximate_pos = { getPose().x + globalPoseDelta.x,
-                                         getPose().y + globalPoseDelta.y,
-                                         current_angle };
+        units::FPose approximate_pose = { getPose().x + globalPoseDelta.x,
+                                          getPose().y + globalPoseDelta.y,
+                                          current_angle };
 
         // use reference model if possible
         if (reference_model != nullptr) {
             // TODO: does approximate_pos have global pose delta applied or not?
-            approximate_pos = reference_model->getPose();
+            approximate_pose = reference_model->getPose();
 
             auto motion_model_timestamp =
               motion_model->getLatestUpdateTimestamp();
@@ -155,13 +156,13 @@ class ParticleFilter {
             if (reference_model_timestamp < motion_model_timestamp) {
                 // motion model was updated after latest update from reference,
                 // meaning global delta has likely not been applied yet
-                approximate_pos += globalPoseDelta;
+                approximate_pose += globalPoseDelta;
             }
         }
 
         // perform the one time updates on the sensors
         for (Sensor* sensor : sensors) {
-            sensor->update(current_angle, approximate_pos);
+            sensor->update(current_angle, approximate_pose);
         }
     }
 
@@ -244,12 +245,33 @@ class ParticleFilter {
     }
 
     void updatePredictionBasedOnParticles() {
-        if (active_sensors <= 1) {
-            updatePrediction(getPose().x + globalPoseDelta.x,
-                             getPose().y + globalPoseDelta.y,
-                             current_angle);
+        const int active_sensors_threshold = 0;
+
+        units::FPose rough_prediction = { getPose().x + globalPoseDelta.x,
+                                          getPose().y + globalPoseDelta.y,
+                                          current_angle };
+
+        if (active_sensors <= active_sensors_threshold) {
+            updatePrediction(rough_prediction.x,
+                             rough_prediction.y,
+                             rough_prediction.orientation);
             return;
         }
+
+        bool know_x = false;
+        bool know_y = false;
+
+        // figure out if we know x/y over all active sensors
+        for (Sensor* sensor : sensors) {
+            if (sensor->hasAvailableReading()) {
+                std::pair<bool, bool> known_coords =
+                  sensor->getKnownCoords(rough_prediction);
+                know_x |= known_coords.first;
+                know_y |= known_coords.second;
+            }
+        }
+
+        // figure out in which directions we are certain
 
         // sum of included particles multiplied by their respective weights
         FLength weighted_x_sum = 0.0_Fm;
@@ -271,11 +293,11 @@ class ParticleFilter {
 
         // updates prediction before resampling, as resampling sets all
         // weights to 1/N which can significantly shift the prediction
-        updatePrediction(weighted_x_sum / weight_sum,
-                         weighted_y_sum / weight_sum,
-                         current_angle,
-                         // sets confidence to 1, actual global update
-                         1);
+        updatePrediction(
+          know_x ? weighted_x_sum / weight_sum : rough_prediction.x,
+          know_y ? weighted_y_sum / weight_sum : rough_prediction.y,
+          current_angle,
+          Confidences { know_x, know_y, false });
     }
 
     // resamples particles using stochastic universal sampling
@@ -367,10 +389,11 @@ class ParticleFilter {
         }
     }
 
-    void updatePrediction(FLength x,
-                          FLength y,
-                          FAngle angle,
-                          std::optional<float> confidence = std::nullopt) {
+    void
+    updatePrediction(FLength x,
+                     FLength y,
+                     FAngle angle,
+                     std::optional<Confidences> confidence = std::nullopt) {
         // set to nullopt by default
         this->confidence = confidence;
 
@@ -437,6 +460,30 @@ class ParticleFilter {
             updatePrediction(getPose().x + globalPoseDelta.x,
                              getPose().y + globalPoseDelta.y,
                              current_angle);
+
+            // log particles also
+            if (PFConfig.logging) {
+                printf("start particles\n");
+                if (PFConfig.particle_logging) {
+                    if (PFConfig.custom_particle_logging) {
+                        for (auto [pose, weight] : custom_particles) {
+                            printf("%.1f %.1f %.1f\n",
+                                   pose.x.convert(in),
+                                   pose.y.convert(in),
+                                   weight * 100);
+                        }
+                    } else {
+                        for (size_t i = 0; i < N; i++) {
+                            printf("%.1f %.1f %.1f\n",
+                                   x[i].convert(in),
+                                   y[i].convert(in),
+                                   weights[i] * 100);
+                        }
+                    }
+                }
+                printf("end particles\n");
+            }
+
             endUpdate();
             return;
         }
@@ -590,7 +637,7 @@ class ParticleFilter {
                     0_FstDeg);
     }
 
-    std::optional<float> getConfidence() {
+    std::optional<Confidences> getConfidence() {
         return confidence;
     }
 

@@ -93,7 +93,7 @@ class ParticleFilterModel : public LocalizationModel {
         return particle_filter.getPose();
     }
 
-    std::optional<float> getConfidence() override {
+    std::optional<Confidences> getConfidence() override {
         return particle_filter.getConfidence();
     }
 

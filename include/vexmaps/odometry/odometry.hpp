@@ -299,7 +299,7 @@ class OdometryModel : public LocalizationModel {
      *
      * @return the confidence on the estimate (if available)
      */
-    std::optional<float> getConfidence() override {
+    std::optional<Confidences> getConfidence() override {
         return std::nullopt;
     }
 

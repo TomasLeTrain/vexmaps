@@ -14,7 +14,7 @@ struct SmootherConfig {
 
     // // determines how much a pose measurement influences the pose estimate
     double alpha_x = 0.03;
-    double alpha_y = 0.05;
+    double alpha_y = 0.03;
     double alpha_theta = 0.00;
 
     // used by pose_delta_measurement to estimate the pose
@@ -117,11 +117,14 @@ class SmootherModel : public LocalizationModel {
             // only use if it measures the global directly
             pose_model->getConfidence().has_value()) {
             units::Pose pose_measurement = pose_model->getPose();
+            auto confidences = pose_model->getConfidence();
 
             units::V2Position difference = pose_measurement - pose_estimate;
 
-            pose_estimate.x += config.alpha_x * difference.x;
-            pose_estimate.y += config.alpha_y * difference.y;
+            if (confidences->know_x)
+                pose_estimate.x += config.alpha_x * difference.x;
+            if (confidences->know_y)
+                pose_estimate.y += config.alpha_y * difference.y;
 
             // only good if pose has an orientation measurement
             // pose_estimate.orientation =
@@ -181,10 +184,6 @@ class SmootherModel : public LocalizationModel {
         return local_pose_delta;
     }
 
-    std::optional<float> getConfidence() override {
-        return std::nullopt;
-    }
-
     Length getDistanceTraveled() override {
         return distance_traveled;
     }
@@ -226,6 +225,10 @@ class SmootherModel : public LocalizationModel {
     AngularVelocity getAngularVelocity() override {
         // just uses angular velocity from local delta model
         return local_delta_model->getAngularVelocity();
+    }
+
+    std::optional<Confidences> getConfidence() override {
+        return std::nullopt;
     }
 
     ~SmootherModel() override = default;
