@@ -14,7 +14,7 @@ struct PFConfiguration {
     bool logging = false;
     bool particle_logging = false;
     bool custom_particle_logging = false;
-	bool print_custom_data = false;
+    bool print_custom_data = false;
 
     // threshold for sum of weights before normalization which determines if the
     // iteration is lost this should be tuned so iterations which are clearly
@@ -99,13 +99,16 @@ struct DistanceSensorConfig {
     float normalCoeff = 0.6;
     float mapCoeff = 0.25;
 
-    // static constexpr FLength maxDistanceDifference = 18_in;
-    FLength maxDistanceDifference = 3_in;
-    FLength maxOutDistanceDifference = 4.5_in;
+    FLength maxDistanceDifference = 5_in;
+    FLength maxOutDistanceDifference = 5_in;
 
-	bool detect_obstacles = false;
+    // threshold for max distance that is still used in the mcl
+    // at long distances the distance sensors tend to be significantly
+    // inaccurate (might be tunable to be better?)
+    FLength maxUsableDistance = 70_in;
 
-    // static constexpr bool logging = false;
+    bool detect_obstacles = true;
+
     bool logging = true;
 };
 

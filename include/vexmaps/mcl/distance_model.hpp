@@ -70,9 +70,32 @@ class DistanceSensorModel : public Sensor {
     FLength horizontal_wall_length;
     FLength vertical_wall_length;
 
-    bool new_measurement = false;
+    static constexpr Time DIST_POLLING_RATE = 1.0 / 30_Hz;
 
-    std::optional<std::pair<int32_t, Time>> last_measurement = std::nullopt;
+    struct DistanceMeasurement {
+        bool installed;
+        std::int32_t distance;
+        std::int32_t confidence;
+        std::int32_t object_size;
+        double object_velocity;
+        Time timestamp;
+
+        // does not take timestamp into account
+        bool operator==(DistanceMeasurement& other) {
+            return std::tie(installed,
+                            distance,
+                            confidence,
+                            object_size,
+                            object_velocity) == std::tie(other.installed,
+                                                         other.distance,
+                                                         other.confidence,
+                                                         other.object_size,
+                                                         other.object_velocity);
+        }
+    };
+
+    std::optional<DistanceMeasurement> s_last_measurement;
+    DistanceMeasurement current_measurement;
 
   public:
     DistanceSensorModel(pros::Distance* distance_sensor,
@@ -123,7 +146,9 @@ class DistanceSensorModel : public Sensor {
         auto circle_dist = dot - units::sqrt(diff);
 
         // circle not really intersected since wall distance was smaller
-        if (wall_distance < circle_dist) return std::nullopt;
+        if (wall_distance < circle_dist) {
+            return std::nullopt;
+        }
 
         auto actual_diff =
           units::max(units::square(actual_radius) - units::square(cross),
@@ -143,40 +168,57 @@ class DistanceSensorModel : public Sensor {
         return actual_dist;
     }
 
+    // checks if we have new measurement and updates accordingly
+    // returns whether there is a new measurement or not
+    bool updateMeasurementInformation() {
+        current_measurement = { .installed = distance_sensor->is_installed(),
+                                .distance = distance_sensor->get(),
+                                .confidence = distance_sensor->get_confidence(),
+                                .object_size =
+                                  distance_sensor->get_object_size(),
+                                .object_velocity =
+                                  distance_sensor->get_object_velocity(),
+                                .timestamp = from_msec(pros::millis()) };
+
+        bool has_new_measurement =
+          // no last measurement available
+          !s_last_measurement ||
+          // or some part of the measurements differ
+          // assumes that all information updates at the same time
+          (current_measurement != *s_last_measurement ||
+           // or time from last measurement is so long that we are guaranteed to
+           // get new measurement, even if we measure the same distance.
+           // In practice it works in the expected cases but it occasionally
+           // doesn't (maybe a packet gets lost from the sensor?)
+           current_measurement.timestamp - s_last_measurement->timestamp >
+             DIST_POLLING_RATE);
+
+        // updated only on new measurement to keep last measurement timestamp
+        // accurate
+        if (has_new_measurement) s_last_measurement = current_measurement;
+        return has_new_measurement;
+    }
+
     void update(Angle angle, std::optional<units::FPose> pose) override {
-        // first check if the distance sensor is available, and if its not then
-        // fail non-destructively while still alerting user
-        if (distance_sensor == nullptr || !distance_sensor->is_installed()) {
+        // first check if the distance sensor is available, and if its not
+        // then fail non-destructively while still alerting user
+        if (distance_sensor == nullptr) {
             // not available, just set exit to true
+            exit_without_new_measurement = true;
             exit = true;
-            // printf(
-            //   "ONE OF THE DISTANCE SENSORS ARE NOT CONNECTED CORRECTLY!!\n");
             return;
         }
 
-        const int32_t measured_mm = distance_sensor->get();
-        auto installed = distance_sensor->is_installed();
+        const bool has_new_measurement = updateMeasurementInformation();
 
-        Time now = from_msec(pros::millis());
-
-        constexpr Time DIST_POLLING_RATE = 1.0 / 30_Hz;
-
-        new_measurement = !installed ||
-                          // either we don't have last measurement
-                          !last_measurement ||
-                          // or measurements differ
-                          (last_measurement->first != measured_mm ||
-                           // or we are guaranteed to have new measurements
-                           now - last_measurement->second > DIST_POLLING_RATE);
-
-        // updated only once to keep last_measurement_time accurate
-        if (new_measurement) last_measurement = { measured_mm, now };
+        const int32_t measured_mm = current_measurement.distance;
+        const bool installed = current_measurement.installed;
 
         measured_distance = from_mm(measured_mm);
 
-        // only applies scale factor if distance sensor uses alternate algo for
-        // determining distance (smaller than 200_mm probably does not need a
-        // scaling factor)
+        // only applies scale factor if distance sensor uses alternate algo
+        // for determining distance (smaller than 200_mm probably does not
+        // need a scaling factor)
         if (measured_distance > 200_mm) {
             measured_distance *= m_distance_scale_factor;
         }
@@ -186,17 +228,19 @@ class DistanceSensorModel : public Sensor {
         exit_without_new_measurement =
           // not connected
           !installed ||
-          // distance sensor doesn't measure anything
+          // or distance sensor doesn't measure anything
           measured_mm == 9999
+          // or measured distance is too big and therefore ignored
+          || measured_distance > config.maxUsableDistance
           // or disabled
           || (!enabled);
 
-        exit = exit_without_new_measurement
-               // or didn't receieve new data
-               || !new_measurement;
-
         // rotates offset and angle
         rotated_offsets = FrotatePose(offsets, angle);
+
+        // constrain orientation
+        rotated_offsets.orientation =
+          units::constrainAngle2pi(rotated_offsets.orientation);
 
         map_angle = units::constrainAngle2pi(rotated_offsets.orientation);
 
@@ -216,8 +260,8 @@ class DistanceSensorModel : public Sensor {
 
         // we will always compare all particles to two walls
         // one vertical and one horizontal
-        // since the walls we check are always the same for both we can cache
-        // the x/y value of the wall for each axis
+        // since the walls we check are always the same for both we can
+        // cache the x/y value of the wall for each axis
         Length original_horizontal_wall_length =
           global_hor_wall_length * cos_sign;
         Length original_vertical_wall_length =
@@ -251,7 +295,7 @@ class DistanceSensorModel : public Sensor {
         // (only depends on measured distance)
         expFactor = expVal * config.expCoeff + randomFactor;
 
-        bool make_shorter = false;
+        bool shrink_max_difference = false;
 
         if (pose) {
             FLength pose_distance_difference =
@@ -270,13 +314,12 @@ class DistanceSensorModel : public Sensor {
                 FLength corner_y = 70_in;
                 FLength corner_radius = 10_in;
 
-                // check if it would have intersection with a matchloader
                 for (int i = -1; i <= 1; i += 2) {
                     for (int j = -1; j <= 1; j += 2) {
                         // check matchloader
-                        make_shorter |=
+                        shrink_max_difference |=
                           circleIntersection(
-                            *pose,
+                            *pose + rotated_offsets,
                             rotated_offsets.orientation,
                             { matchloader_x * i, matchloader_y * j },
                             match_big_radius,
@@ -285,8 +328,8 @@ class DistanceSensorModel : public Sensor {
                             .has_value();
 
                         // check corner
-                        make_shorter |=
-                          circleIntersection(*pose,
+                        shrink_max_difference |=
+                          circleIntersection(*pose + rotated_offsets,
                                              rotated_offsets.orientation,
                                              { corner_x * i, corner_y * j },
                                              corner_radius,
@@ -300,7 +343,7 @@ class DistanceSensorModel : public Sensor {
             FLength max_difference = config.maxDistanceDifference;
             FLength max_out_difference = config.maxOutDistanceDifference;
 
-            if (make_shorter) {
+            if (shrink_max_difference) {
                 // make difference shorter if possibly noisy
                 max_difference = 2.6_in;
                 max_out_difference = 2.6_in;
@@ -309,7 +352,7 @@ class DistanceSensorModel : public Sensor {
             // measured is smaller than expected
             if (units::sgn(pose_distance_difference) > 0.0 &&
                 units::abs(pose_distance_difference) > max_difference) {
-                exit = true;
+                exit_without_new_measurement = true;
             } else if
               // measured is greater than expected
               //
@@ -318,9 +361,14 @@ class DistanceSensorModel : public Sensor {
               // actually should be. we can ignore measurements like these
               (units::sgn(pose_distance_difference) < 0.0 &&
                units::abs(pose_distance_difference) > max_out_difference) {
-                exit = true;
+                exit_without_new_measurement = true;
             }
         }
+
+        // update exit only at the end
+        exit = exit_without_new_measurement
+               // or didn't receieve new data
+               || !has_new_measurement;
 
         if (config.logging) {
             // name:distance,confidence,std,exit,obj_size
@@ -330,7 +378,7 @@ class DistanceSensorModel : public Sensor {
                       << (exit ? "true" : "false")
                       << ","
                       // << distance_sensor->get_object_size() << "\n";
-                      << int(make_shorter) << "\n";
+                      << int(shrink_max_difference) << "\n";
         }
     }
 

@@ -121,26 +121,38 @@ FakeDistance fake_back_distance;
 FakeDistance fake_left_distance;
 FakeDistance fake_right_distance;
 
-units::Pose front_distance_offsets = { 3.5_in,
-                                       +(12.5_in / 2) - 1.25_in,
-                                       0_stDeg };
+// cor + cor_offsets = geometric
+units::V2Position odom_cor_offsets = { 0.0_in, 0_in };
 
-units::Pose left_distance_offsets = { 3.5_in + 0.625_in,
-                                      +(12.5_in / 2) - 1.25_in - 0.4_in,
-                                      90_stDeg };
+// geometric -> cor
+units::V2Position dist_cor_offsets = { 0.5_in, 0_in };
 
-units::Pose back_distance_offsets = { -(15.5_in / 2) + 1.4_in,
-                                      3.0_in,
-                                      180_stDeg };
+constexpr units::Pose distToCor(units::Pose dist_pose) {
+    return { dist_pose - dist_cor_offsets, dist_pose.orientation };
+}
 
-units::Pose right_distance_offsets = { -0.7_in,
-                                       -(12.5_in / 2) + 2.25_in,
-                                       270_stDeg };
+// distance sensor offsets
+units::Pose front_distance_offsets =
+  distToCor({ 3.5_in, +(12.5_in / 2) - 1.2_in, 0_stDeg });
 
-double front_distance_scale_factor = 0.986105769705;
-double left_distance_scale_factor = 0.985;
-double back_distance_scale_factor = 0.97905795044;
-double right_distance_scale_factor = 0.985454688793;
+units::Pose left_distance_offsets = distToCor(
+  { 3.5_in + 0.625_in, +(12.5_in / 2) - 1.2_in - 0.375_in, 90_stDeg });
+
+units::Pose back_distance_offsets =
+  distToCor({ -(15.5_in / 2) + 1.0_in, 2.35_in, 180_stDeg });
+
+units::Pose right_distance_offsets =
+  distToCor({ -0.7_in, -(12.5_in / 2) + 2.23_in, 270_stDeg });
+
+// double front_distance_scale_factor = 0.986105769705;
+// double left_distance_scale_factor = 0.985;
+// double back_distance_scale_factor = 0.97905795044;
+// double right_distance_scale_factor = 0.985454688793;
+
+double front_distance_scale_factor = 1.0;
+double left_distance_scale_factor = 1.0;
+double back_distance_scale_factor = 1.0;
+double right_distance_scale_factor = 1.0;
 
 vexmaps::DistanceSensorModel front_laser_model(&fake_front_distance,
                                                front_distance_offsets,
@@ -204,9 +216,9 @@ void autonomous() {}
 void opcontrol() {
     std::cout << "entered opcontrol" << std::endl;
 
-    float sum_of_dists = 0.0;
-
-    int n = 100;
+    // float sum_of_dists = 0.0;
+    //
+    // int n = 100;
 
     // std::uniform_real_distribution<float> xs(-70, 70);
     // std::uniform_real_distribution<float> ys(-70, 70);
@@ -222,11 +234,12 @@ void opcontrol() {
     // std::vector<float> tmp_list(n);
 
     // Length measured_distance = 18.4_in;
-    units::Pose curr_pose = { 45.3_in, -42.2_in, 269.13_stDeg };
+    units::Pose curr_pose = { -28.340462_in, -31.108507_in, 33.225723_stDeg };
 
     // fake_distance.set_length(measured_distance);
-    fake_front_distance.set_length(24.575_in);
-    fake_left_distance.set_length(15.822_in);
+    // fake_front_distance.set_length(24.575_in);
+    // fake_left_distance.set_length(15.822_in);
+    fake_back_distance.set_length(37.967_in);
 
     std::cout << "front" << std::endl;
     front_laser_model.update(curr_pose.orientation, curr_pose);

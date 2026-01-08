@@ -1,7 +1,9 @@
 #pragma once
 
+#include "units/Angle.hpp"
 #include "units/Pose.hpp"
 #include "units/Vector2D.hpp"
+#include "units/units.hpp"
 #include "vexmaps/localization_model.hpp"
 #include <mutex>
 #include <optional>
@@ -16,6 +18,19 @@ struct SmootherConfig {
     double alpha_x = 0.03;
     double alpha_y = 0.03;
     double alpha_theta = 0.00;
+
+    // determines how angular velocity translates to a change in alpha values
+    // alpha -= ang_vel_alpha * abs(angular_velocity)
+    Divided<Number, AngularVelocity> ang_vel_alpha = 0.02 / 300_degps;
+
+    // determines how much theta being straight changes alpha
+    // alpha -= theta_alpha * sin(2 * theta), so this value peaks when robot is
+    // at 45 degree angles
+    double theta_to_alpha = 0.02;
+
+    // determines how much the linear velocity of the robot changes alpha
+    // alpha -= abs_vel_alpha * velocity_vector.magnitude()
+    Divided<Number, LinearVelocity> linear_vel_alpha = 0.01 / 70_inps;
 
     // used by pose_delta_measurement to estimate the pose
     double beta_x = 1;
@@ -119,12 +134,25 @@ class SmootherModel : public LocalizationModel {
             units::Pose pose_measurement = pose_model->getPose();
             auto confidences = pose_model->getConfidence();
 
+            AngularVelocity abs_angular_velocity =
+              units::abs(local_delta_model->getAngularVelocity());
+            LinearVelocity linear_velocity =
+              local_delta_model->getLocalVelocityVector().magnitude();
+
+            double alpha_difference =
+              abs_angular_velocity * config.ang_vel_alpha +
+              linear_velocity * config.linear_vel_alpha +
+              units::sin(2 * getPose().orientation) * config.theta_to_alpha;
+
+            double new_x_alpha = config.alpha_x - alpha_difference;
+            double new_y_alpha = config.alpha_y - alpha_difference;
+
             units::V2Position difference = pose_measurement - pose_estimate;
 
             if (confidences->know_x)
-                pose_estimate.x += config.alpha_x * difference.x;
+                pose_estimate.x += new_x_alpha * difference.x;
             if (confidences->know_y)
-                pose_estimate.y += config.alpha_y * difference.y;
+                pose_estimate.y += new_y_alpha * difference.y;
 
             // only good if pose has an orientation measurement
             // pose_estimate.orientation =
