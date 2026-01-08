@@ -24,8 +24,8 @@ struct SmootherConfig {
     Divided<Number, AngularVelocity> ang_vel_alpha = 0.02 / 300_degps;
 
     // determines how much theta being straight changes alpha
-    // alpha -= theta_alpha * sin(2 * theta), so this value peaks when robot is
-    // at 45 degree angles
+    // alpha -= theta_alpha * theta_func(theta), where theta_func(theta)
+    // peaks at 1 when robot is at 45 degree angles
     double theta_to_alpha = 0.02;
 
     // determines how much the linear velocity of the robot changes alpha
@@ -139,13 +139,21 @@ class SmootherModel : public LocalizationModel {
             LinearVelocity linear_velocity =
               local_delta_model->getLocalVelocityVector().magnitude();
 
+            // returns value between [0,1], where 0 indicates perfectly
+            // perpendiular and 1 indicates facing 45 degree angles
+            auto theta_func = [](Angle theta) -> double {
+                return 1 - units::abs(units::cos(2 * theta));
+            };
+
             double alpha_difference =
               abs_angular_velocity * config.ang_vel_alpha +
               linear_velocity * config.linear_vel_alpha +
-              units::sin(2 * getPose().orientation) * config.theta_to_alpha;
+              theta_func(getPose().orientation) * config.theta_to_alpha;
 
-            double new_x_alpha = config.alpha_x - alpha_difference;
-            double new_y_alpha = config.alpha_y - alpha_difference;
+            double new_x_alpha =
+              units::max(config.alpha_x - alpha_difference, 0);
+            double new_y_alpha =
+              units::max(config.alpha_y - alpha_difference, 0);
 
             units::V2Position difference = pose_measurement - pose_estimate;
 
