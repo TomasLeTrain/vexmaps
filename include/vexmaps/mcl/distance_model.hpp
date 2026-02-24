@@ -23,6 +23,7 @@ class DistanceSensorModel : public Sensor {
     pros::Distance* distance_sensor;
     units::Pose offsets;
     double m_distance_scale_factor;
+    Length m_distance_scale_offset { 0 };
     std::string name;
 
     DistanceSensorConfig config;
@@ -41,6 +42,10 @@ class DistanceSensorModel : public Sensor {
     // is not super important (i.e. distance sensor resets)
     bool exit_without_new_measurement = false;
 
+    // used to block outdated measurements that can happen when distance sensors
+    // reading don't come in time
+    bool block_next_measurement = false;
+
     // when false, sensor is not used regardless of measurements
     bool enabled = true;
 
@@ -48,6 +53,9 @@ class DistanceSensorModel : public Sensor {
     // sense
     const double randomUniformProbability = 1 / (2.54);
     double randomFactor;
+
+    // exit if no measurement, otherwise accept no matter what
+    bool distance_exit = false;
 
     // precomputed values
 
@@ -101,12 +109,14 @@ class DistanceSensorModel : public Sensor {
     DistanceSensorModel(pros::Distance* distance_sensor,
                         units::Pose offsets,
                         double distance_scale_factor,
+                        Length distance_scale_offset,
                         std::string name,
                         DistanceSensorConfig config,
                         MapReader<>* map_reader = nullptr)
         : distance_sensor(distance_sensor),
           offsets(offsets),
           m_distance_scale_factor(distance_scale_factor),
+          m_distance_scale_offset(distance_scale_offset),
           name(name),
           config(config),
           map_reader(map_reader) {
@@ -190,12 +200,31 @@ class DistanceSensorModel : public Sensor {
            // get new measurement, even if we measure the same distance.
            // In practice it works in the expected cases but it occasionally
            // doesn't (maybe a packet gets lost from the sensor?)
-           current_measurement.timestamp - s_last_measurement->timestamp >
-             DIST_POLLING_RATE);
+
+           false
+           // current_measurement.timestamp - s_last_measurement->timestamp >
+           //   DIST_POLLING_RATE
+           //
+          );
+
+        bool timed_out =
+          current_measurement.timestamp - s_last_measurement->timestamp >
+          DIST_POLLING_RATE;
+
+        if (timed_out && !has_new_measurement) {
+            block_next_measurement = true;
+        }
 
         // updated only on new measurement to keep last measurement timestamp
         // accurate
         if (has_new_measurement) s_last_measurement = current_measurement;
+
+        if (has_new_measurement && block_next_measurement) {
+            block_next_measurement = false;
+            // prevents from being used
+            has_new_measurement = false;
+        }
+
         return has_new_measurement;
     }
 
@@ -206,6 +235,7 @@ class DistanceSensorModel : public Sensor {
             // not available, just set exit to true
             exit_without_new_measurement = true;
             exit = true;
+            distance_exit = true;
             return;
         }
 
@@ -216,12 +246,12 @@ class DistanceSensorModel : public Sensor {
 
         measured_distance = from_mm(measured_mm);
 
-        // only applies scale factor if distance sensor uses alternate algo
-        // for determining distance (smaller than 200_mm probably does not
-        // need a scaling factor)
-        if (measured_distance > 200_mm) {
-            measured_distance *= m_distance_scale_factor;
-        }
+
+		// smaller than 200_mm still has some scaling that is benefitial to do
+        // if (measured_distance > 200_mm) {
+        measured_distance *= m_distance_scale_factor;
+        measured_distance += m_distance_scale_offset;
+        // }
 
         f_measured_distance = measured_distance.internal();
 
@@ -234,6 +264,8 @@ class DistanceSensorModel : public Sensor {
           || measured_distance > config.maxUsableDistance
           // or disabled
           || (!enabled);
+
+        distance_exit = !installed || measured_mm == 9999;
 
         // rotates offset and angle
         rotated_offsets = FrotatePose(offsets, angle);
@@ -610,7 +642,7 @@ class DistanceSensorModel : public Sensor {
     // measurements.
     // can be used for distance sensor resets
     std::optional<units::V2FPosition> getExpected() override {
-        if (exit_without_new_measurement) {
+        if (distance_exit) {
             return std::nullopt;
         }
 

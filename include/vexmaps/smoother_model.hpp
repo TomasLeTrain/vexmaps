@@ -65,9 +65,11 @@ class SmootherModel : public LocalizationModel {
 
     // relatively quick so that we can get the latest updates as fast as
     // possible
-    Time task_delta_time = 8_msec;
+    Time task_delta_time = 4_msec;
 
     SmootherConfig config;
+
+    double new_alpha_x, new_alpha_y;
 
   protected:
     mutable pros::Mutex m_mutex;
@@ -150,17 +152,15 @@ class SmootherModel : public LocalizationModel {
               linear_velocity * config.linear_vel_alpha +
               theta_func(getPose().orientation) * config.theta_to_alpha;
 
-            double new_x_alpha =
-              units::max(config.alpha_x - alpha_difference, 0);
-            double new_y_alpha =
-              units::max(config.alpha_y - alpha_difference, 0);
+            new_alpha_x = units::max(config.alpha_x - alpha_difference, 0);
+            new_alpha_y = units::max(config.alpha_y - alpha_difference, 0);
 
             units::V2Position difference = pose_measurement - pose_estimate;
 
             if (confidences->know_x)
-                pose_estimate.x += new_x_alpha * difference.x;
+                pose_estimate.x += new_alpha_x * difference.x;
             if (confidences->know_y)
-                pose_estimate.y += new_y_alpha * difference.y;
+                pose_estimate.y += new_alpha_y * difference.y;
 
             // only good if pose has an orientation measurement
             // pose_estimate.orientation =
@@ -202,6 +202,10 @@ class SmootherModel : public LocalizationModel {
         local_delta_model->setPose(new_pose);
 
         pose_model->setPose(new_pose);
+    }
+
+    units::Vector2D<Number> getAlphas() {
+        return { new_alpha_x, new_alpha_y };
     }
 
     units::Pose getPose() override {

@@ -71,6 +71,7 @@ class ModelManager : public LocalizationModel {
     // initialize all models
     void init() override {
         for (ManagedModel model : models) {
+            std::cout << "initializing " << model.name << std::endl;
             if (model.model == nullptr) continue;
             model.model->init();
             pros::delay(init_timeout);
@@ -190,6 +191,6 @@ class ModelManager : public LocalizationModel {
     std::optional<Confidences> getConfidence() override {
         assert(active_model != nullptr);
         return active_model->getConfidence();
-	}
+    }
 };
 } // namespace vexmaps

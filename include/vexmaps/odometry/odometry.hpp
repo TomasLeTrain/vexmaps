@@ -30,6 +30,8 @@ class OdometryModel : public LocalizationModel {
     Angle last_imu_angle = 0_stDeg;
 
     units::V2Position last_local_delta, local_delta;
+    Angle last_angle_delta = 0_stDeg;
+
     units::V2Position global_delta;
     Angle angle_delta = 0_stDeg;
 
@@ -240,13 +242,18 @@ class OdometryModel : public LocalizationModel {
         local_velocity_vector =
           (local_delta + last_local_delta) / (getTaskDeltaTime() * 2);
 
-        // uses imu measurement directly
-        angular_velocity = (imu->get_gyro_rate().z) * degps;
+        // averages last and current delta to eliminate noise
+        // angular_velocity =
+        //   (angle_delta + last_angle_delta) / (getTaskDeltaTime() * 2);
+
+		// specific to z down orientation
+        angular_velocity = -imu->get_gyro_rate().z * degps;
 
         // update last- variables
         last_pose = pose;
         last_imu_angle = current_imu_angle;
         last_local_delta = local_delta;
+        last_angle_delta = angle_delta;
         latest_update_time = from_msec(pros::millis());
     }
 
